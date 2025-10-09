@@ -1,0 +1,20 @@
+# Environment files with secrets
+.env
+api/.env
+frontend/.env
+
+# Docker files with secrets
+docker-compose.yml
+
+# Logs
+*.log
+api/logs/
+logs/
+
+# Dependencies
+node_modules/
+api/vendor/
+
+# Build outputs
+frontend/dist/
+frontend/build/
