@@ -36,10 +36,11 @@ class KpiController
             // Try cache first
             if ($cached = $this->cache->get($cacheKey)) {
                 $this->logger->info('Priority KPIs served from cache');
+                $cachedData = $this->convertNumericFields(json_decode($cached, true));
 
                 return $this->jsonResponse($response, [
                     'success' => true,
-                    'data' => json_decode($cached, true),
+                    'data' => $cachedData,
                     'meta' => [
                         'cached' => true,
                         'timestamp' => date('c')
@@ -61,6 +62,9 @@ class KpiController
                     ]
                 ], 404);
             }
+
+            // Convert string values to proper numeric types
+            $kpis = $this->convertNumericFields($kpis);
 
             // Cache for 5 minutes
             $this->cache->setex($cacheKey, 300, json_encode($kpis));
@@ -92,6 +96,37 @@ class KpiController
                 ]
             ], 500);
         }
+    }
+
+    /**
+     * Convert numeric string fields to proper types
+     */
+    private function convertNumericFields(array $kpis): array
+    {
+        $numericFields = [
+            'today_revenue',
+            'today_bookings',
+            'month_revenue',
+            'month_bookings',
+            'conversion_rate',
+            'avg_booking_value',
+            'leads_in_pipeline',
+            'projects_in_progress',
+            'avg_photo_delivery_days',
+            'avg_video_delivery_days',
+            'avg_client_rating',
+            'nps_score'
+        ];
+
+        foreach ($numericFields as $field) {
+            if (isset($kpis[$field])) {
+                // Convert to float, then to int if it's a whole number
+                $value = (float) $kpis[$field];
+                $kpis[$field] = (floor($value) == $value) ? (int) $value : $value;
+            }
+        }
+
+        return $kpis;
     }
 
     /**
