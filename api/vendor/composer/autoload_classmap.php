@@ -10,6 +10,7 @@ return array(
     'CandidAnalytics\\Controllers\\AnalyticsController' => $baseDir . '/src/Controllers/AnalyticsController.php',
     'CandidAnalytics\\Controllers\\AuthController' => $baseDir . '/src/Controllers/AuthController.php',
     'CandidAnalytics\\Controllers\\KpiController' => $baseDir . '/src/Controllers/KpiController.php',
+    'CandidAnalytics\\Controllers\\WebhookController' => $baseDir . '/src/Controllers/WebhookController.php',
     'CandidAnalytics\\Services\\Database' => $baseDir . '/src/Services/Database.php',
     'Composer\\InstalledVersions' => $vendorDir . '/composer/InstalledVersions.php',
     'DI\\Attribute\\Inject' => $vendorDir . '/php-di/php-di/src/Attribute/Inject.php',

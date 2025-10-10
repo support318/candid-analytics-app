@@ -174,6 +174,7 @@ class ComposerStaticInit79c2a4ceecb2ee5f3a3791b29cdc0427
         'CandidAnalytics\\Controllers\\AnalyticsController' => __DIR__ . '/../..' . '/src/Controllers/AnalyticsController.php',
         'CandidAnalytics\\Controllers\\AuthController' => __DIR__ . '/../..' . '/src/Controllers/AuthController.php',
         'CandidAnalytics\\Controllers\\KpiController' => __DIR__ . '/../..' . '/src/Controllers/KpiController.php',
+        'CandidAnalytics\\Controllers\\WebhookController' => __DIR__ . '/../..' . '/src/Controllers/WebhookController.php',
         'CandidAnalytics\\Services\\Database' => __DIR__ . '/../..' . '/src/Services/Database.php',
         'Composer\\InstalledVersions' => __DIR__ . '/..' . '/composer/InstalledVersions.php',
         'DI\\Attribute\\Inject' => __DIR__ . '/..' . '/php-di/php-di/src/Attribute/Inject.php',
