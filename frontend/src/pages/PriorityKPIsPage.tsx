@@ -39,7 +39,7 @@ const PriorityKPIsPage = () => {
           Real-time overview of your most important business metrics
         </Typography>
         <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1 }}>
-          Last updated: {format(new Date(kpis.updated_at), 'MMM dd, yyyy hh:mm a')}
+          Last updated: {format(new Date(kpis.last_updated), 'MMM dd, yyyy hh:mm a')}
         </Typography>
       </Box>
 
@@ -138,7 +138,7 @@ const PriorityKPIsPage = () => {
         <Grid item xs={12} sm={6} md={4}>
           <StatCard
             title="Avg Delivery Time"
-            value={kpis.avg_delivery_time_days.toFixed(1)}
+            value={((kpis.avg_photo_delivery_days + kpis.avg_video_delivery_days) / 2).toFixed(1)}
             unit="days"
             icon={<TimeIcon />}
             color="primary"
@@ -150,7 +150,7 @@ const PriorityKPIsPage = () => {
         <Grid item xs={12} sm={6} md={4}>
           <StatCard
             title="Client Satisfaction"
-            value={kpis.client_satisfaction_score.toFixed(1)}
+            value={kpis.avg_client_rating.toFixed(1)}
             unit="/5"
             icon={<SatisfactionIcon />}
             color="success"
