@@ -59,9 +59,11 @@ export interface PriorityKPIs {
   avg_booking_value: number
   leads_in_pipeline: number
   projects_in_progress: number
-  avg_delivery_time_days: number
-  client_satisfaction_score: number
-  updated_at: string
+  avg_photo_delivery_days: number
+  avg_video_delivery_days: number
+  avg_client_rating: number
+  nps_score: number
+  last_updated: string
 }
 
 // Revenue Types
