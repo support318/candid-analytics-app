@@ -116,6 +116,58 @@ class Database
         return $stmt->execute($params);
     }
 
+    /**
+     * Insert record and return ID
+     */
+    public function insert(string $table, array $data): string
+    {
+        $columns = array_keys($data);
+        $placeholders = array_map(fn($col) => ":$col", $columns);
+
+        $sql = sprintf(
+            "INSERT INTO %s (%s) VALUES (%s) RETURNING id",
+            $table,
+            implode(', ', $columns),
+            implode(', ', $placeholders)
+        );
+
+        $stmt = $this->getConnection()->prepare($sql);
+        $stmt->execute($data);
+        return $stmt->fetchColumn();
+    }
+
+    /**
+     * Update record
+     */
+    public function update(string $table, array $data, array $where): bool
+    {
+        $setClause = [];
+        foreach (array_keys($data) as $col) {
+            $setClause[] = "$col = :$col";
+        }
+
+        $whereClause = [];
+        foreach (array_keys($where) as $col) {
+            $whereClause[] = "$col = :where_$col";
+        }
+
+        $sql = sprintf(
+            "UPDATE %s SET %s WHERE %s",
+            $table,
+            implode(', ', $setClause),
+            implode(' AND ', $whereClause)
+        );
+
+        // Merge data and where params with prefixed where keys
+        $params = $data;
+        foreach ($where as $key => $value) {
+            $params["where_$key"] = $value;
+        }
+
+        $stmt = $this->getConnection()->prepare($sql);
+        return $stmt->execute($params);
+    }
+
     // =========================================================================
     // KPI Query Methods
     // =========================================================================

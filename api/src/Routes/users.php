@@ -6,14 +6,13 @@ use Ramsey\Uuid\Uuid;
 
 // Get current user profile
 $app->get('/api/v1/users/me', function (Request $request, Response $response) {
-    $container = $this->get('container');
-    $db = $container->get('db');
-    $jwt = $container->get('jwt');
+    $db = $this->get('db');
+    $jwt = $this->get('jwt');
 
     try {
         $userId = $jwt['sub'];
 
-        $stmt = $db->prepare("
+        $stmt = $db->getConnection()->prepare("
             SELECT id, username, email, full_name, role, created_at, last_login
             FROM users
             WHERE id = ?
@@ -46,9 +45,8 @@ $app->get('/api/v1/users/me', function (Request $request, Response $response) {
 
 // Change own password
 $app->put('/api/v1/users/me/password', function (Request $request, Response $response) {
-    $container = $this->get('container');
-    $db = $container->get('db');
-    $jwt = $container->get('jwt');
+    $db = $this->get('db');
+    $jwt = $this->get('jwt');
     $body = $request->getParsedBody();
 
     try {
@@ -75,7 +73,7 @@ $app->put('/api/v1/users/me/password', function (Request $request, Response $res
         }
 
         // Verify current password
-        $stmt = $db->prepare("SELECT password_hash FROM users WHERE id = ?");
+        $stmt = $db->getConnection()->prepare("SELECT password_hash FROM users WHERE id = ?");
         $stmt->execute([$userId]);
         $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
@@ -90,7 +88,7 @@ $app->put('/api/v1/users/me/password', function (Request $request, Response $res
 
         // Update password
         $newHash = password_hash($newPassword, PASSWORD_DEFAULT);
-        $stmt = $db->prepare("UPDATE users SET password_hash = ?, updated_at = NOW() WHERE id = ?");
+        $stmt = $db->getConnection()->prepare("UPDATE users SET password_hash = ?, updated_at = NOW() WHERE id = ?");
         $stmt->execute([$newHash, $userId]);
 
         $data = [
@@ -112,9 +110,8 @@ $app->put('/api/v1/users/me/password', function (Request $request, Response $res
 
 // List all users (admin only)
 $app->get('/api/v1/users', function (Request $request, Response $response) {
-    $container = $this->get('container');
-    $db = $container->get('db');
-    $jwt = $container->get('jwt');
+    $db = $this->get('db');
+    $jwt = $this->get('jwt');
 
     try {
         // Check if user is admin
@@ -127,7 +124,7 @@ $app->get('/api/v1/users', function (Request $request, Response $response) {
             return $response->withStatus(403)->withHeader('Content-Type', 'application/json');
         }
 
-        $stmt = $db->query("
+        $stmt = $db->getConnection()->query("
             SELECT id, username, email, full_name, role, created_at, last_login, is_active
             FROM users
             ORDER BY created_at DESC
@@ -150,9 +147,8 @@ $app->get('/api/v1/users', function (Request $request, Response $response) {
 
 // Create new user (admin only)
 $app->post('/api/v1/users', function (Request $request, Response $response) {
-    $container = $this->get('container');
-    $db = $container->get('db');
-    $jwt = $container->get('jwt');
+    $db = $this->get('db');
+    $jwt = $this->get('jwt');
     $body = $request->getParsedBody();
 
     try {
@@ -191,7 +187,7 @@ $app->post('/api/v1/users', function (Request $request, Response $response) {
         }
 
         // Check if username or email already exists
-        $stmt = $db->prepare("SELECT id FROM users WHERE username = ? OR email = ?");
+        $stmt = $db->getConnection()->prepare("SELECT id FROM users WHERE username = ? OR email = ?");
         $stmt->execute([$username, $email]);
         if ($stmt->fetch()) {
             $data = [
@@ -206,7 +202,7 @@ $app->post('/api/v1/users', function (Request $request, Response $response) {
         $userId = Uuid::uuid4()->toString();
         $passwordHash = password_hash($password, PASSWORD_DEFAULT);
 
-        $stmt = $db->prepare("
+        $stmt = $db->getConnection()->prepare("
             INSERT INTO users (id, username, email, password_hash, full_name, role, is_active)
             VALUES (?, ?, ?, ?, ?, ?, true)
         ");
@@ -237,9 +233,8 @@ $app->post('/api/v1/users', function (Request $request, Response $response) {
 
 // Update user (admin only)
 $app->put('/api/v1/users/{id}', function (Request $request, Response $response, array $args) {
-    $container = $this->get('container');
-    $db = $container->get('db');
-    $jwt = $container->get('jwt');
+    $db = $this->get('db');
+    $jwt = $this->get('jwt');
     $body = $request->getParsedBody();
     $userId = $args['id'];
 
@@ -300,7 +295,7 @@ $app->put('/api/v1/users/{id}', function (Request $request, Response $response, 
         $params[] = $userId;
 
         $sql = "UPDATE users SET " . implode(", ", $updates) . " WHERE id = ?";
-        $stmt = $db->prepare($sql);
+        $stmt = $db->getConnection()->prepare($sql);
         $stmt->execute($params);
 
         if ($stmt->rowCount() === 0) {
@@ -331,9 +326,8 @@ $app->put('/api/v1/users/{id}', function (Request $request, Response $response, 
 
 // Delete user (admin only)
 $app->delete('/api/v1/users/{id}', function (Request $request, Response $response, array $args) {
-    $container = $this->get('container');
-    $db = $container->get('db');
-    $jwt = $container->get('jwt');
+    $db = $this->get('db');
+    $jwt = $this->get('jwt');
     $userId = $args['id'];
 
     try {
@@ -357,7 +351,7 @@ $app->delete('/api/v1/users/{id}', function (Request $request, Response $respons
             return $response->withStatus(400)->withHeader('Content-Type', 'application/json');
         }
 
-        $stmt = $db->prepare("DELETE FROM users WHERE id = ?");
+        $stmt = $db->getConnection()->prepare("DELETE FROM users WHERE id = ?");
         $stmt->execute([$userId]);
 
         if ($stmt->rowCount() === 0) {
