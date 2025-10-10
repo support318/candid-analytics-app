@@ -1,7 +1,11 @@
 # Environment files with secrets
 .env
 api/.env
-frontend/.env
+frontend/.env.local
+frontend/.env.development
+frontend/.env.test
+# Allow .env.production (safe - no secrets, just API URL)
+# frontend/.env.production is NOT ignored
 
 # Docker files with secrets
 docker-compose.yml
