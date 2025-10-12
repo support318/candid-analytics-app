@@ -274,11 +274,12 @@ class WebhookController
             // Insert revenue record
             $revenueData = [
                 'project_id' => $project['id'],
+                'client_id' => $client['id'],
                 'payment_date' => $paymentDate,
                 'amount' => $amount,
                 'payment_method' => $paymentMethod,
-                'category' => $data['category'] ?? 'booking',
-                'notes' => $data['notes'] ?? null,
+                'payment_type' => $data['category'] ?? $data['payment_type'] ?? 'deposit',
+                'status' => 'completed',
                 'created_at' => date('Y-m-d H:i:s')
             ];
 
