@@ -62,16 +62,16 @@ const StaffPage = () => {
   }
 
   // Calculate totals
-  const totalProjects = staffData.reduce((sum, staff) => sum + staff.projects_completed, 0)
-  const totalRevenue = staffData.reduce((sum, staff) => sum + staff.revenue_generated, 0)
-  const avgRating = staffData.reduce((sum, staff) => sum + staff.avg_client_rating, 0) / staffData.length
+  const totalProjects = staffData.reduce((sum, staff) => sum + Number(staff.projects_completed || 0), 0)
+  const totalRevenue = staffData.reduce((sum, staff) => sum + Number(staff.revenue_generated || 0), 0)
+  const avgRating = staffData.reduce((sum, staff) => sum + Number(staff.avg_client_rating || 0), 0) / staffData.length
 
   // Format data for chart
   const chartData = staffData.map((staff) => ({
-    name: staff.staff_name.split(' ')[0], // First name only for chart
-    projects: staff.projects_completed,
-    revenue: staff.revenue_generated / 1000, // In thousands
-    rating: staff.avg_client_rating,
+    name: staff.staff_name ? staff.staff_name.split(' ')[0] : 'Unknown', // First name only for chart
+    projects: Number(staff.projects_completed || 0),
+    revenue: Number(staff.revenue_generated || 0) / 1000, // In thousands
+    rating: Number(staff.avg_client_rating || 0),
   }))
 
   return (
@@ -126,7 +126,7 @@ const StaffPage = () => {
           <Paper sx={{ p: 3, textAlign: 'center' }}>
             <StarIcon sx={{ fontSize: 40, color: 'success.main', mb: 1 }} />
             <Typography variant="h4" fontWeight="bold">
-              {avgRating.toFixed(1)}/5
+              {avgRating ? avgRating.toFixed(1) : '0'}/5
             </Typography>
             <Typography variant="body2" color="text.secondary">
               Average Client Rating
@@ -183,48 +183,48 @@ const StaffPage = () => {
             </TableHead>
             <TableBody>
               {staffData
-                .sort((a, b) => b.efficiency_score - a.efficiency_score)
+                .sort((a, b) => Number(b.efficiency_score || 0) - Number(a.efficiency_score || 0))
                 .map((staff) => (
                   <TableRow key={staff.staff_id}>
                     <TableCell component="th" scope="row">
                       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                         <Avatar sx={{ width: 32, height: 32, bgcolor: 'primary.main' }}>
-                          {staff.staff_name.charAt(0)}
+                          {staff.staff_name ? staff.staff_name.charAt(0) : '?'}
                         </Avatar>
                         <Typography variant="body2" fontWeight="bold">
-                          {staff.staff_name}
+                          {staff.staff_name || 'Unknown'}
                         </Typography>
                       </Box>
                     </TableCell>
-                    <TableCell align="right">{staff.projects_completed}</TableCell>
+                    <TableCell align="right">{staff.projects_completed || 0}</TableCell>
                     <TableCell align="right">
-                      ${staff.revenue_generated.toLocaleString()}
+                      ${staff.revenue_generated ? Number(staff.revenue_generated).toLocaleString() : '0'}
                     </TableCell>
                     <TableCell align="right">
                       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 0.5 }}>
                         <StarIcon
                           sx={{
                             fontSize: 16,
-                            color: staff.avg_client_rating >= 4.5 ? 'success.main' : 'warning.main',
+                            color: Number(staff.avg_client_rating) >= 4.5 ? 'success.main' : 'warning.main',
                           }}
                         />
                         <Typography
                           variant="body2"
-                          color={staff.avg_client_rating >= 4.5 ? 'success.main' : 'text.primary'}
+                          color={Number(staff.avg_client_rating) >= 4.5 ? 'success.main' : 'text.primary'}
                           fontWeight="bold"
                         >
-                          {staff.avg_client_rating.toFixed(1)}
+                          {staff.avg_client_rating ? Number(staff.avg_client_rating).toFixed(1) : '0'}
                         </Typography>
                       </Box>
                     </TableCell>
                     <TableCell align="right">
                       <Chip
-                        label={`${staff.efficiency_score.toFixed(0)}%`}
+                        label={`${staff.efficiency_score ? Number(staff.efficiency_score).toFixed(0) : '0'}%`}
                         size="small"
                         color={
-                          staff.efficiency_score >= 85
+                          Number(staff.efficiency_score) >= 85
                             ? 'success'
-                            : staff.efficiency_score >= 70
+                            : Number(staff.efficiency_score) >= 70
                             ? 'info'
                             : 'warning'
                         }
@@ -243,7 +243,7 @@ const StaffPage = () => {
           💰 Total Team Revenue
         </Typography>
         <Typography variant="h4" fontWeight="bold" sx={{ mb: 1 }}>
-          ${totalRevenue.toLocaleString()}
+          ${totalRevenue ? Number(totalRevenue).toLocaleString() : '0'}
         </Typography>
         <Typography variant="body2">
           Generated by {staffData.length} team members over the last {timeRange} months
