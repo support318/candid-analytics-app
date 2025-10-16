@@ -65,12 +65,12 @@ const SatisfactionPage = () => {
   if (!satisfactionData || !retentionData) return null
 
   // Format data for retention chart
-  const retentionChartData = retentionData.map((item) => ({
+  const retentionChartData = Array.isArray(retentionData) ? retentionData.map((item) => ({
     month: new Date(item.month).toLocaleDateString('en-US', { month: 'short', year: 'numeric' }),
     rate: item.retention_rate,
     repeatClients: item.repeat_clients,
     totalClients: item.total_clients,
-  }))
+  })) : []
 
   return (
     <Box>
@@ -102,17 +102,17 @@ const SatisfactionPage = () => {
         <Grid item xs={12} sm={6} md={3}>
           <StatCard
             title="Average Rating"
-            value={satisfactionData.avg_rating.toFixed(1)}
+            value={satisfactionData.avg_rating ? Number(satisfactionData.avg_rating).toFixed(1) : '0'}
             unit="/5"
             icon={<StarIcon />}
             color="success"
-            subtitle={`From ${satisfactionData.total_reviews} reviews`}
+            subtitle={`From ${satisfactionData.total_reviews || 0} reviews`}
           />
         </Grid>
         <Grid item xs={12} sm={6} md={3}>
           <StatCard
             title="NPS Score"
-            value={satisfactionData.nps_score.toFixed(0)}
+            value={satisfactionData.nps_score ? Number(satisfactionData.nps_score).toFixed(0) : '0'}
             icon={<ThumbUpIcon />}
             color="primary"
             subtitle="Net Promoter Score"
@@ -121,7 +121,7 @@ const SatisfactionPage = () => {
         <Grid item xs={12} sm={6} md={3}>
           <StatCard
             title="Repeat Booking Rate"
-            value={satisfactionData.repeat_booking_rate.toFixed(1)}
+            value={satisfactionData.repeat_booking_rate ? Number(satisfactionData.repeat_booking_rate).toFixed(1) : '0'}
             unit="%"
             icon={<RepeatIcon />}
             color="secondary"
@@ -131,7 +131,7 @@ const SatisfactionPage = () => {
         <Grid item xs={12} sm={6} md={3}>
           <StatCard
             title="Referral Rate"
-            value={satisfactionData.referral_rate.toFixed(1)}
+            value={satisfactionData.referral_rate ? Number(satisfactionData.referral_rate).toFixed(1) : '0'}
             unit="%"
             icon={<RecommendIcon />}
             color="info"
@@ -151,17 +151,17 @@ const SatisfactionPage = () => {
 
         <Box sx={{ textAlign: 'center', py: 4 }}>
           <Typography variant="h2" fontWeight="bold" sx={{ mb: 2 }}>
-            {satisfactionData.avg_rating.toFixed(1)}
+            {satisfactionData.avg_rating ? Number(satisfactionData.avg_rating).toFixed(1) : '0'}
           </Typography>
           <Rating
-            value={satisfactionData.avg_rating}
+            value={satisfactionData.avg_rating ? Number(satisfactionData.avg_rating) : 0}
             precision={0.1}
             size="large"
             readOnly
             sx={{ fontSize: '3rem', mb: 2 }}
           />
           <Typography variant="body1" color="text.secondary">
-            Based on {satisfactionData.total_reviews} client reviews
+            Based on {satisfactionData.total_reviews || 0} client reviews
           </Typography>
         </Box>
       </Paper>
@@ -203,16 +203,16 @@ const SatisfactionPage = () => {
           📊 Understanding Your Metrics
         </Typography>
         <Typography variant="body2" paragraph>
-          <strong>NPS Score ({satisfactionData.nps_score.toFixed(0)}):</strong>{' '}
-          {satisfactionData.nps_score >= 50
+          <strong>NPS Score ({satisfactionData.nps_score ? Number(satisfactionData.nps_score).toFixed(0) : '0'}):</strong>{' '}
+          {Number(satisfactionData.nps_score) >= 50
             ? 'Excellent! Your clients are highly satisfied and likely to recommend you.'
-            : satisfactionData.nps_score >= 0
+            : Number(satisfactionData.nps_score) >= 0
             ? 'Good score. Focus on converting passive clients to promoters.'
             : 'Your NPS needs improvement. Prioritize addressing client concerns.'}
         </Typography>
         <Typography variant="body2">
-          <strong>Repeat Booking Rate ({satisfactionData.repeat_booking_rate.toFixed(1)}%):</strong>{' '}
-          {satisfactionData.repeat_booking_rate >= 30
+          <strong>Repeat Booking Rate ({satisfactionData.repeat_booking_rate ? Number(satisfactionData.repeat_booking_rate).toFixed(1) : '0'}%):</strong>{' '}
+          {Number(satisfactionData.repeat_booking_rate) >= 30
             ? 'Great client loyalty! Your clients love working with you.'
             : 'Consider loyalty programs or follow-up campaigns to improve retention.'}
         </Typography>
