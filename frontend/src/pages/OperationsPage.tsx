@@ -75,7 +75,7 @@ const OperationsPage = () => {
         <Grid item xs={12} sm={6} md={4}>
           <StatCard
             title="Avg Photo Delivery"
-            value={opsData.avg_photo_delivery_days.toFixed(1)}
+            value={opsData.avg_photo_delivery_days ? Number(opsData.avg_photo_delivery_days).toFixed(1) : '0'}
             unit="days"
             icon={<ScheduleIcon />}
             color="primary"
@@ -85,7 +85,7 @@ const OperationsPage = () => {
         <Grid item xs={12} sm={6} md={4}>
           <StatCard
             title="Avg Video Delivery"
-            value={opsData.avg_video_delivery_days.toFixed(1)}
+            value={opsData.avg_video_delivery_days ? Number(opsData.avg_video_delivery_days).toFixed(1) : '0'}
             unit="days"
             icon={<ScheduleIcon />}
             color="secondary"
@@ -95,7 +95,7 @@ const OperationsPage = () => {
         <Grid item xs={12} sm={6} md={4}>
           <StatCard
             title="Avg Response Time"
-            value={opsData.avg_first_response_hours.toFixed(1)}
+            value={opsData.avg_first_response_hours ? Number(opsData.avg_first_response_hours).toFixed(1) : '0'}
             unit="hrs"
             icon={<ScheduleIcon />}
             color="info"
@@ -142,7 +142,7 @@ const OperationsPage = () => {
             <Box sx={{ textAlign: 'center', p: 3, border: '1px solid', borderColor: 'divider', borderRadius: 2 }}>
               <ScheduleIcon sx={{ fontSize: 48, color: 'primary.main', mb: 1 }} />
               <Typography variant="h3" fontWeight="bold" color="primary.main">
-                {onTimePercentage.toFixed(1)}%
+                {onTimePercentage ? Number(onTimePercentage).toFixed(1) : '0'}%
               </Typography>
               <Typography variant="body2" color="text.secondary">
                 On-Time Rate
@@ -197,8 +197,8 @@ const OperationsPage = () => {
             : 'Your on-time delivery rate needs attention. Review your workflow and resource allocation to improve efficiency.'}
         </Typography>
         <Typography variant="body2">
-          Average delivery times: Photo deliveries are averaging {opsData.avg_photo_delivery_days.toFixed(1)} days,
-          while video deliveries take {opsData.avg_video_delivery_days.toFixed(1)} days on average.
+          Average delivery times: Photo deliveries are averaging {opsData.avg_photo_delivery_days ? Number(opsData.avg_photo_delivery_days).toFixed(1) : '0'} days,
+          while video deliveries take {opsData.avg_video_delivery_days ? Number(opsData.avg_video_delivery_days).toFixed(1) : '0'} days on average.
         </Typography>
       </Paper>
     </Box>
