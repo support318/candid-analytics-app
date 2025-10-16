@@ -43,7 +43,7 @@ const MarketingPage = () => {
 
   if (!marketingData) return null
 
-  const roi = marketingData.roi
+  const roi = marketingData.roi ? Number(marketingData.roi) : 0
 
   return (
     <Box>
@@ -92,7 +92,7 @@ const MarketingPage = () => {
           <Grid item xs={12} sm={6} md={4}>
             <StatCard
               title="Avg Open Rate"
-              value={marketingData.email_open_rate.toFixed(1)}
+              value={marketingData.email_open_rate ? Number(marketingData.email_open_rate).toFixed(1) : '0'}
               unit="%"
               icon={<EmailIcon />}
               color="info"
@@ -102,7 +102,7 @@ const MarketingPage = () => {
           <Grid item xs={12} sm={6} md={4}>
             <StatCard
               title="Avg Click Rate"
-              value={marketingData.email_click_rate.toFixed(1)}
+              value={marketingData.email_click_rate ? Number(marketingData.email_click_rate).toFixed(1) : '0'}
               unit="%"
               icon={<EmailIcon />}
               color="secondary"
@@ -134,7 +134,7 @@ const MarketingPage = () => {
           <Grid item xs={12} sm={6}>
             <StatCard
               title="Avg Engagement Rate"
-              value={marketingData.social_engagement_rate.toFixed(1)}
+              value={marketingData.social_engagement_rate ? Number(marketingData.social_engagement_rate).toFixed(1) : '0'}
               unit="%"
               icon={<InsightsIcon />}
               color="success"
@@ -157,7 +157,7 @@ const MarketingPage = () => {
           <Grid item xs={12} sm={6} md={4}>
             <StatCard
               title="Ad Spend"
-              value={`$${marketingData.ad_spend.toLocaleString()}`}
+              value={`$${marketingData.ad_spend ? Number(marketingData.ad_spend).toLocaleString() : '0'}`}
               icon={<MoneyIcon />}
               color="error"
               subtitle="Total investment"
@@ -166,7 +166,7 @@ const MarketingPage = () => {
           <Grid item xs={12} sm={6} md={4}>
             <StatCard
               title="Ad Revenue"
-              value={`$${marketingData.ad_revenue.toLocaleString()}`}
+              value={`$${marketingData.ad_revenue ? Number(marketingData.ad_revenue).toLocaleString() : '0'}`}
               icon={<MoneyIcon />}
               color="success"
               subtitle="Revenue generated"
@@ -175,7 +175,7 @@ const MarketingPage = () => {
           <Grid item xs={12} sm={6} md={4}>
             <StatCard
               title="ROI"
-              value={roi.toFixed(1)}
+              value={roi ? roi.toFixed(1) : '0'}
               unit="x"
               icon={<InsightsIcon />}
               color={roi >= 3 ? 'success' : roi >= 1.5 ? 'info' : 'warning'}
@@ -190,7 +190,7 @@ const MarketingPage = () => {
             For every $1 spent on advertising, you generate:
           </Typography>
           <Typography variant="h3" fontWeight="bold" color="success.main">
-            ${roi.toFixed(2)}
+            ${roi ? roi.toFixed(2) : '0.00'}
           </Typography>
         </Box>
       </Paper>
@@ -202,13 +202,13 @@ const MarketingPage = () => {
         </Typography>
         <Typography variant="body2" paragraph>
           <strong>Email Performance:</strong>{' '}
-          {marketingData.email_open_rate >= 20
+          {Number(marketingData.email_open_rate) >= 20
             ? 'Your email open rate is above industry average. Keep engaging your audience!'
             : 'Consider improving subject lines and send times to boost open rates.'}
         </Typography>
         <Typography variant="body2" paragraph>
           <strong>Social Media:</strong>{' '}
-          {marketingData.social_engagement_rate >= 3
+          {Number(marketingData.social_engagement_rate) >= 3
             ? 'Excellent social media engagement! Your content resonates with your audience.'
             : 'Try different content types and posting times to improve engagement.'}
         </Typography>
