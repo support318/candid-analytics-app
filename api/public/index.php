@@ -71,10 +71,10 @@ $container->set('logger', function() {
 
 $app->add(function (Request $request, $handler) use ($app) {
     $origin = $request->getHeaderLine('Origin');
-    $allowedOrigins = explode(',', $_ENV['ALLOWED_ORIGINS'] ?? '');
+    $allowedOrigins = array_map('trim', explode(',', $_ENV['ALLOWED_ORIGINS'] ?? ''));
 
-    // Check if origin is allowed
-    $isAllowedOrigin = in_array($origin, $allowedOrigins);
+    // Check if origin is allowed (also allow requests without Origin header for server-to-server)
+    $isAllowedOrigin = empty($origin) || in_array($origin, $allowedOrigins);
 
     // Handle OPTIONS preflight request immediately
     if ($request->getMethod() === 'OPTIONS') {
