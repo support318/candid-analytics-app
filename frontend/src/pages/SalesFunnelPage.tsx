@@ -196,10 +196,10 @@ const SalesFunnelPage = () => {
                   <TableCell align="right">
                     <Typography
                       variant="body2"
-                      color={stage.conversion_rate >= 50 ? 'success.main' : 'text.primary'}
+                      color={Number(stage.conversion_rate) >= 50 ? 'success.main' : 'text.primary'}
                       fontWeight="bold"
                     >
-                      {stage.conversion_rate.toFixed(1)}%
+                      {Number(stage.conversion_rate).toFixed(1)}%
                     </Typography>
                   </TableCell>
                 </TableRow>
@@ -239,10 +239,10 @@ const SalesFunnelPage = () => {
                   <TableCell align="right">
                     <Typography
                       variant="body2"
-                      color={source.conversion_rate >= 20 ? 'success.main' : 'text.primary'}
+                      color={Number(source.conversion_rate) >= 20 ? 'success.main' : 'text.primary'}
                       fontWeight="bold"
                     >
-                      {source.conversion_rate.toFixed(1)}%
+                      {Number(source.conversion_rate).toFixed(1)}%
                     </Typography>
                   </TableCell>
                   <TableCell align="right">${source.revenue.toLocaleString()}</TableCell>
