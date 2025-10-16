@@ -64,7 +64,19 @@ const RevenuePage = () => {
     )
   }
 
-  if (!revenueData || !locationData) return null
+  if (!revenueData || !locationData || revenueData.length === 0 || locationData.length === 0) {
+    return (
+      <Box sx={{ p: 4, textAlign: 'center' }}>
+        <Typography variant="h6" color="text.secondary">
+          No revenue data available for the selected time period.
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
+          Revenue data: {revenueData ? `${revenueData.length} records` : 'undefined'}<br />
+          Location data: {locationData ? `${locationData.length} records` : 'undefined'}
+        </Typography>
+      </Box>
+    )
+  }
 
   // Calculate totals
   const totalRevenue = revenueData.reduce((sum, item) => sum + item.total_revenue, 0)
