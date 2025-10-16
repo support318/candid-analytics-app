@@ -186,9 +186,9 @@ class Database
     public function getRevenueAnalytics(int $months = 12): array
     {
         $sql = "SELECT * FROM mv_revenue_analytics
-                WHERE month >= CURRENT_DATE - INTERVAL ':months months'
+                WHERE month >= CURRENT_DATE - INTERVAL '$months months'
                 ORDER BY month DESC";
-        return $this->query($sql, ['months' => $months]);
+        return $this->query($sql);
     }
 
     /**
@@ -197,9 +197,9 @@ class Database
     public function getRevenueByLocation(int $limit = 20): array
     {
         $sql = "SELECT * FROM mv_revenue_by_location
-                ORDER BY total_revenue DESC
-                LIMIT :limit";
-        return $this->query($sql, ['limit' => $limit]);
+                ORDER BY revenue DESC
+                LIMIT $limit";
+        return $this->query($sql);
     }
 
     /**
@@ -207,10 +207,26 @@ class Database
      */
     public function getSalesFunnel(int $months = 12): array
     {
-        $sql = "SELECT * FROM mv_sales_funnel
-                WHERE month >= CURRENT_DATE - INTERVAL ':months months'
-                ORDER BY month DESC";
-        return $this->query($sql, ['months' => $months]);
+        // Aggregate monthly data into funnel stages
+        $sql = "WITH funnel_totals AS (
+                    SELECT
+                        SUM(total_inquiries) as total_inquiries,
+                        SUM(consultations_booked) as consultations_booked,
+                        SUM(projects_booked) as projects_booked
+                    FROM mv_sales_funnel
+                    WHERE month >= CURRENT_DATE - INTERVAL '$months months'
+                )
+                SELECT 'Inquiries' as stage, total_inquiries as count, total_inquiries * 1500 as value, 100.0 as conversion_rate FROM funnel_totals
+                UNION ALL
+                SELECT 'Consultations', consultations_booked, consultations_booked * 2000,
+                       CASE WHEN total_inquiries > 0 THEN (consultations_booked::numeric / total_inquiries * 100) ELSE 0 END
+                FROM funnel_totals
+                UNION ALL
+                SELECT 'Bookings', projects_booked, projects_booked * 2500,
+                       CASE WHEN consultations_booked > 0 THEN (projects_booked::numeric / consultations_booked * 100) ELSE 0 END
+                FROM funnel_totals
+                ORDER BY count DESC";
+        return $this->query($sql);
     }
 
     /**
@@ -219,7 +235,14 @@ class Database
     public function getLeadSourcePerformance(): array
     {
         return $this->query(
-            "SELECT * FROM mv_lead_source_performance ORDER BY total_revenue DESC"
+            "SELECT
+                lead_source as source,
+                total_leads as leads,
+                converted_leads as conversions,
+                conversion_rate,
+                total_revenue as revenue
+             FROM mv_lead_source_performance
+             ORDER BY total_revenue DESC"
         );
     }
 
@@ -229,9 +252,9 @@ class Database
     public function getOperationalEfficiency(int $months = 12): array
     {
         $sql = "SELECT * FROM mv_operational_efficiency
-                WHERE month >= CURRENT_DATE - INTERVAL ':months months'
+                WHERE month >= CURRENT_DATE - INTERVAL '$months months'
                 ORDER BY month DESC, deliverable_type";
-        return $this->query($sql, ['months' => $months]);
+        return $this->query($sql);
     }
 
     /**
@@ -240,9 +263,9 @@ class Database
     public function getStaffProductivity(int $months = 6): array
     {
         $sql = "SELECT * FROM mv_staff_productivity
-                WHERE month >= CURRENT_DATE - INTERVAL ':months months'
+                WHERE month >= CURRENT_DATE - INTERVAL '$months months'
                 ORDER BY month DESC, revenue_generated DESC";
-        return $this->query($sql, ['months' => $months]);
+        return $this->query($sql);
     }
 
     /**
@@ -251,9 +274,9 @@ class Database
     public function getClientSatisfaction(int $months = 12): array
     {
         $sql = "SELECT * FROM mv_client_satisfaction
-                WHERE month >= CURRENT_DATE - INTERVAL ':months months'
+                WHERE month >= CURRENT_DATE - INTERVAL '$months months'
                 ORDER BY month DESC";
-        return $this->query($sql, ['months' => $months]);
+        return $this->query($sql);
     }
 
     /**
@@ -270,9 +293,9 @@ class Database
     public function getMarketingPerformance(int $months = 12): array
     {
         $sql = "SELECT * FROM mv_marketing_performance
-                WHERE month >= CURRENT_DATE - INTERVAL ':months months'
+                WHERE month >= CURRENT_DATE - INTERVAL '$months months'
                 ORDER BY month DESC, campaign_type";
-        return $this->query($sql, ['months' => $months]);
+        return $this->query($sql);
     }
 
     /**

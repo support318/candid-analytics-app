@@ -329,7 +329,9 @@ class AnalyticsController
             $data = $query();
             $queryTime = round((microtime(true) - $startTime) * 1000, 2);
 
-            if (empty($data)) {
+            // Empty array is valid data, not an error
+            // Only return 404 if query returned null (not found)
+            if ($data === null) {
                 return $this->jsonResponse($response, [
                     'success' => false,
                     'error' => [
@@ -339,7 +341,12 @@ class AnalyticsController
                 ], 404);
             }
 
-            // Cache for 5 minutes
+            // Ensure data is always an array
+            if (!is_array($data)) {
+                $data = [$data];
+            }
+
+            // Cache for 5 minutes (even empty arrays)
             $this->cache->setex($cacheKey, 300, json_encode($data));
 
             return $this->jsonResponse($response, [
