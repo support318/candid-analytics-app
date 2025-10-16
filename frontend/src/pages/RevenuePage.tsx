@@ -240,7 +240,7 @@ const RevenuePage = () => {
                       }}
                     />
                     <Typography variant="caption" color="text.secondary">
-                      {location.booking_count} bookings • {location.percentage.toFixed(1)}%
+                      {location.booking_count} bookings • {location.percentage ? location.percentage.toFixed(1) : '0'}%
                     </Typography>
                   </Box>
                 </Box>
