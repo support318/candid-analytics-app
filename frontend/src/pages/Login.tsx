@@ -10,8 +10,8 @@ import {
   Alert,
   CircularProgress,
 } from '@mui/material'
-import { Lock as LockIcon } from '@mui/icons-material'
 import { useAuth } from '../hooks/useAuth'
+import candidLogo from '../assets/candid-logo.png'
 
 const Login = () => {
   const [username, setUsername] = useState('')
@@ -38,17 +38,12 @@ const Login = () => {
           <CardContent sx={{ p: 4 }}>
             {/* Header */}
             <Box sx={{ textAlign: 'center', mb: 4 }}>
-              <Box
-                sx={{
-                  display: 'inline-flex',
-                  p: 2,
-                  borderRadius: '50%',
-                  bgcolor: 'primary.main',
-                  color: 'white',
-                  mb: 2,
-                }}
-              >
-                <LockIcon sx={{ fontSize: 40 }} />
+              <Box sx={{ mb: 2 }}>
+                <img
+                  src={candidLogo}
+                  alt="Candid Studios Logo"
+                  style={{ width: '120px', height: 'auto' }}
+                />
               </Box>
               <Typography variant="h4" component="h1" gutterBottom>
                 Candid Analytics
