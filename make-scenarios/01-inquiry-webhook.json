@@ -1,0 +1,81 @@
+{
+  "name": "GHL Inquiry → Analytics Dashboard",
+  "flow": [
+    {
+      "id": 1,
+      "module": "gateway:CustomWebHook",
+      "version": 1,
+      "parameters": {
+        "hook": {
+          "name": "GHL New Inquiry",
+          "structure": [
+            {
+              "name": "contact_id",
+              "type": "text"
+            },
+            {
+              "name": "firstName",
+              "type": "text"
+            },
+            {
+              "name": "lastName",
+              "type": "text"
+            },
+            {
+              "name": "email",
+              "type": "text"
+            },
+            {
+              "name": "phone",
+              "type": "text"
+            },
+            {
+              "name": "source",
+              "type": "text"
+            },
+            {
+              "name": "dateAdded",
+              "type": "text"
+            },
+            {
+              "name": "customFields",
+              "type": "collection"
+            }
+          ]
+        }
+      },
+      "mapper": {},
+      "metadata": {
+        "designer": {
+          "x": 0,
+          "y": 0
+        }
+      }
+    },
+    {
+      "id": 2,
+      "module": "http:ActionSendData",
+      "version": 3,
+      "parameters": {
+        "url": "https://api.candidstudios.net/api/webhooks/inquiries",
+        "method": "post",
+        "headers": [
+          {
+            "name": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "bodyType": "raw",
+        "rawBody": "{\n  \"contact_id\": \"{{1.contact_id}}\",\n  \"firstName\": \"{{1.firstName}}\",\n  \"lastName\": \"{{1.lastName}}\",\n  \"email\": \"{{1.email}}\",\n  \"phone\": \"{{1.phone}}\",\n  \"source\": \"{{1.source}}\",\n  \"dateAdded\": \"{{1.dateAdded}}\",\n  \"customFields\": {{1.customFields}}\n}",
+        "parseResponse": true
+      },
+      "mapper": {},
+      "metadata": {
+        "designer": {
+          "x": 300,
+          "y": 0
+        }
+      }
+    }
+  ]
+}

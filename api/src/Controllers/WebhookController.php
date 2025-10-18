@@ -60,19 +60,50 @@ class WebhookController
     {
         try {
             $body = (string) $request->getBody();
+
+            // Log the raw body for debugging
+            $this->logger->info('Received webhook payload', [
+                'body' => substr($body, 0, 1000), // First 1000 chars
+                'content_type' => $request->getHeaderLine('Content-Type'),
+                'body_length' => strlen($body)
+            ]);
+
+            if (empty($body)) {
+                $this->logger->error('Empty request body');
+                return null;
+            }
+
             $data = json_decode($body, true);
 
             if (json_last_error() !== JSON_ERROR_NONE) {
                 $this->logger->error('Invalid JSON payload', [
-                    'error' => json_last_error_msg()
+                    'error' => json_last_error_msg(),
+                    'body' => $body
                 ]);
                 return null;
             }
 
+            // Ensure we got an array (handle case where Make sends just a number)
+            if (!is_array($data)) {
+                $this->logger->error('Payload is not an array - Make.com may be sending wrong data', [
+                    'type' => gettype($data),
+                    'value' => $data,
+                    'hint' => 'Check Make.com HTTP module data field - should be {{toJSON(1)}} or explicit field mapping'
+                ]);
+                return null;
+            }
+
+            $this->logger->info('Parsed webhook payload successfully', [
+                'keys' => array_keys($data),
+                'has_id' => isset($data['id']),
+                'has_customField' => isset($data['customField'])
+            ]);
+
             return $data;
         } catch (\Exception $e) {
             $this->logger->error('Error parsing webhook payload', [
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
             ]);
             return null;
         }
@@ -81,6 +112,21 @@ class WebhookController
     /**
      * Receive project/booking webhook
      * POST /api/webhooks/projects
+     *
+     * Expected GHL payload when contact moves to "customer" or opportunity status changes to "booked":
+     * - id: GHL contact ID
+     * - firstName, lastName, email, phone: Standard fields
+     * - customField[AFX1YsPB7QHBP50Ajs1Q]: Event Type
+     * - customField[kvDBYw8fixMftjWdF51g]: Event Date
+     * - customField[OwkEjGNrbE7Rq0TKBG3M]: Total Value/Budget
+     * - customField[nstR5hDlCQJ6jpsFzxi7]: Venue Address
+     * - customField[00cH1d6lq8m0U8tf3FHg]: Services (array)
+     * - customField[T5nq3eiHUuXM0wFYNNg4]: Photography Hours
+     * - customField[nHiHJxfNxRhvUfIu6oD6]: Videography Hours
+     * - customField[iQOUEUruaZfPKln4sdKP]: Drone Services
+     * - customField[Bz6tmEcB0S0pXupkha84]: Event Start Time
+     * - customField[qpyukeOGutkXczPGJOyK]: Contact Name
+     * - customField[xV2dxG35gDY1Vqb00Ql1]: Project Notes
      */
     public function receiveProject(Request $request, Response $response): Response
     {
@@ -101,18 +147,51 @@ class WebhookController
 
         try {
             // Extract GHL data
-            $ghlContactId = $data['contact_id'] ?? $data['contactId'] ?? null;
-            $projectName = $data['opportunity_name'] ?? $data['project_name'] ?? null;
-            $bookingDate = $data['booking_date'] ?? $data['event_date'] ?? null;
-            $totalRevenue = $data['total_value'] ?? $data['monetary_value'] ?? 0;
-            $status = $data['status'] ?? 'booked';
+            $ghlContactId = $data['id'] ?? $data['contact_id'] ?? null;
 
-            if (!$ghlContactId || !$projectName) {
+            // Map GHL status to valid project status
+            $rawStatus = $data['status'] ?? 'booked';
+            $statusMap = [
+                'open' => 'booked',
+                'won' => 'booked',
+                'lost' => 'cancelled',
+                'abandoned' => 'cancelled',
+                'booked' => 'booked',
+                'quoted' => 'quoted',
+                'confirmed' => 'confirmed',
+                'in-progress' => 'in-progress',
+                'completed' => 'completed',
+                'cancelled' => 'cancelled',
+                'archived' => 'archived'
+            ];
+            $status = $statusMap[strtolower($rawStatus)] ?? 'booked';
+
+            if (!$ghlContactId) {
                 return $this->jsonResponse($response, [
                     'success' => false,
-                    'error' => 'Missing required fields: contact_id and opportunity_name'
+                    'error' => 'Missing required field: id or contact_id'
                 ], 400);
             }
+
+            // Extract custom fields
+            $customFields = $data['customField'] ?? [];
+
+            $eventType = $customFields['AFX1YsPB7QHBP50Ajs1Q'] ?? 'other';
+            $eventDate = $customFields['kvDBYw8fixMftjWdF51g'] ?? null;
+            $totalRevenue = $customFields['OwkEjGNrbE7Rq0TKBG3M'] ?? 0;
+            $venueAddress = $customFields['nstR5hDlCQJ6jpsFzxi7'] ?? null;
+            $services = $customFields['00cH1d6lq8m0U8tf3FHg'] ?? [];
+            $photoHours = $customFields['T5nq3eiHUuXM0wFYNNg4'] ?? 0;
+            $videoHours = $customFields['nHiHJxfNxRhvUfIu6oD6'] ?? 0;
+            $droneServices = $customFields['iQOUEUruaZfPKln4sdKP'] ?? 'No';
+            $eventTime = $customFields['Bz6tmEcB0S0pXupkha84'] ?? null;
+            $contactName = $customFields['qpyukeOGutkXczPGJOyK'] ?? null;
+            $notes = $customFields['xV2dxG35gDY1Vqb00Ql1'] ?? null;
+
+            // Generate project name (handle both camelCase and snake_case from GHL)
+            $firstName = $data['firstName'] ?? $data['first_name'] ?? 'Unknown';
+            $lastName = $data['lastName'] ?? $data['last_name'] ?? '';
+            $projectName = trim("$firstName $lastName - $eventType");
 
             // Check if client exists, create if not
             $client = $this->db->queryOne(
@@ -122,24 +201,50 @@ class WebhookController
 
             if (!$client) {
                 // Create client from webhook data
+                // Filter out empty tags to avoid PostgreSQL array literal errors
+                $tagsArray = $data['tags'] ?? [];
+
+                // Convert comma-separated string to array if needed
+                if (is_string($tagsArray)) {
+                    $tagsArray = array_map('trim', explode(',', $tagsArray));
+                }
+
+                if (is_array($tagsArray)) {
+                    $tagsArray = array_filter($tagsArray, function($tag) {
+                        return !empty($tag);
+                    });
+                }
+
+                // Format as PostgreSQL array literal: {value1,value2}
+                $tags = !empty($tagsArray) ? '{' . implode(',', array_map(function($tag) {
+                    return '"' . addslashes($tag) . '"';
+                }, array_values($tagsArray))) . '}' : null;
+
                 $clientData = [
                     'ghl_contact_id' => $ghlContactId,
-                    'first_name' => $data['first_name'] ?? 'Unknown',
-                    'last_name' => $data['last_name'] ?? '',
+                    'first_name' => $firstName,
+                    'last_name' => $lastName,
                     'email' => $data['email'] ?? null,
                     'phone' => $data['phone'] ?? null,
                     'status' => 'active',
                     'lifecycle_stage' => 'customer',
+                    'tags' => $tags,
                     'created_at' => date('Y-m-d H:i:s')
                 ];
 
                 $clientId = $this->db->insert('clients', $clientData);
-                $this->logger->info('Created new client from webhook', [
+                $this->logger->info('Created new client from project booking', [
                     'client_id' => $clientId,
                     'ghl_contact_id' => $ghlContactId
                 ]);
             } else {
                 $clientId = $client['id'];
+
+                // Update lifecycle stage to customer
+                $this->db->update('clients', [
+                    'lifecycle_stage' => 'customer',
+                    'updated_at' => date('Y-m-d H:i:s')
+                ], ['id' => $clientId]);
             }
 
             // Check if project already exists
@@ -148,16 +253,29 @@ class WebhookController
                 [$clientId, $projectName]
             );
 
+            // Build metadata JSON
+            $metadata = [
+                'services' => is_array($services) ? $services : [$services],
+                'photo_hours' => floatval($photoHours),
+                'video_hours' => floatval($videoHours),
+                'drone_services' => $droneServices,
+                'event_time' => $eventTime,
+                'contact_name' => $contactName
+            ];
+
             if ($existingProject) {
                 // Update existing project
                 $updateData = [
                     'status' => $status,
-                    'total_revenue' => $totalRevenue,
+                    'total_revenue' => floatval($totalRevenue),
+                    'venue_address' => $venueAddress,
+                    'metadata' => json_encode($metadata),
+                    'notes' => $notes,
                     'updated_at' => date('Y-m-d H:i:s')
                 ];
 
-                if ($bookingDate) {
-                    $updateData['booking_date'] = $bookingDate;
+                if ($eventDate) {
+                    $updateData['event_date'] = $eventDate;
                 }
 
                 $this->db->update('projects', $updateData, ['id' => $existingProject['id']]);
@@ -171,19 +289,22 @@ class WebhookController
                 $projectData = [
                     'client_id' => $clientId,
                     'project_name' => $projectName,
-                    'booking_date' => $bookingDate ?? date('Y-m-d'),
-                    'event_date' => $data['event_date'] ?? $bookingDate ?? date('Y-m-d'),
-                    'event_type' => $data['event_type'] ?? 'other',
-                    'venue_name' => $data['location'] ?? $data['venue_name'] ?? null,
+                    'booking_date' => date('Y-m-d'),
+                    'event_date' => $eventDate ?? date('Y-m-d'),
+                    'event_type' => $eventType,
+                    'venue_address' => $venueAddress,
                     'status' => $status,
-                    'total_revenue' => $totalRevenue,
+                    'total_revenue' => floatval($totalRevenue),
+                    'metadata' => json_encode($metadata),
+                    'notes' => $notes,
                     'created_at' => date('Y-m-d H:i:s')
                 ];
 
                 $projectId = $this->db->insert('projects', $projectData);
                 $this->logger->info('Created new project', [
                     'project_id' => $projectId,
-                    'client_id' => $clientId
+                    'client_id' => $clientId,
+                    'project_name' => $projectName
                 ]);
             }
 
@@ -194,7 +315,8 @@ class WebhookController
                 'success' => true,
                 'data' => [
                     'project_id' => $projectId,
-                    'client_id' => $clientId
+                    'client_id' => $clientId,
+                    'project_name' => $projectName
                 ]
             ]);
 
@@ -317,6 +439,18 @@ class WebhookController
     /**
      * Receive inquiry/lead webhook
      * POST /api/webhooks/inquiries
+     *
+     * Expected GHL payload with custom fields:
+     * - id: GHL contact ID
+     * - firstName, lastName, email, phone: Standard fields
+     * - source: Lead source
+     * - dateAdded: When contact was created
+     * - type: "lead" for inquiries
+     * - customField[AFX1YsPB7QHBP50Ajs1Q]: Event Type
+     * - customField[kvDBYw8fixMftjWdF51g]: Event Date
+     * - customField[OwkEjGNrbE7Rq0TKBG3M]: Estimated Budget
+     * - customField[xV2dxG35gDY1Vqb00Ql1]: Project Notes
+     * - customField[nstR5hDlCQJ6jpsFzxi7]: Event Location
      */
     public function receiveInquiry(Request $request, Response $response): Response
     {
@@ -336,16 +470,27 @@ class WebhookController
         }
 
         try {
-            $ghlContactId = $data['contact_id'] ?? null;
+            // GHL contact ID (can be 'id' or 'contact_id')
+            $ghlContactId = $data['id'] ?? $data['contact_id'] ?? null;
             $source = $data['source'] ?? 'website';
             $status = $data['status'] ?? 'new';
 
             if (!$ghlContactId) {
                 return $this->jsonResponse($response, [
                     'success' => false,
-                    'error' => 'Missing required field: contact_id'
+                    'error' => 'Missing required field: id or contact_id'
                 ], 400);
             }
+
+            // Extract custom fields from GHL payload
+            $customFields = $data['customField'] ?? [];
+
+            // Map GHL custom field IDs to values
+            $eventType = $customFields['AFX1YsPB7QHBP50Ajs1Q'] ?? null;
+            $eventDate = $customFields['kvDBYw8fixMftjWdF51g'] ?? null;
+            $budget = $customFields['OwkEjGNrbE7Rq0TKBG3M'] ?? null;
+            $notes = $customFields['xV2dxG35gDY1Vqb00Ql1'] ?? null;
+            $location = $customFields['nstR5hDlCQJ6jpsFzxi7'] ?? null;
 
             // Find or create client
             $client = $this->db->queryOne(
@@ -355,33 +500,82 @@ class WebhookController
 
             if (!$client) {
                 // Create new client
+                // Filter out empty tags to avoid PostgreSQL array literal errors
+                $tagsArray = $data['tags'] ?? [];
+
+                // Convert comma-separated string to array if needed
+                if (is_string($tagsArray)) {
+                    $tagsArray = array_map('trim', explode(',', $tagsArray));
+                }
+
+                if (is_array($tagsArray)) {
+                    $tagsArray = array_filter($tagsArray, function($tag) {
+                        return !empty($tag);
+                    });
+                }
+
+                // Format as PostgreSQL array literal: {value1,value2}
+                $tags = !empty($tagsArray) ? '{' . implode(',', array_map(function($tag) {
+                    return '"' . addslashes($tag) . '"';
+                }, array_values($tagsArray))) . '}' : null;
+
                 $clientData = [
                     'ghl_contact_id' => $ghlContactId,
-                    'first_name' => $data['first_name'] ?? 'Unknown',
-                    'last_name' => $data['last_name'] ?? '',
+                    'first_name' => $data['firstName'] ?? $data['first_name'] ?? 'Unknown',
+                    'last_name' => $data['lastName'] ?? $data['last_name'] ?? '',
                     'email' => $data['email'] ?? null,
                     'phone' => $data['phone'] ?? null,
                     'lead_source' => $source,
                     'status' => 'active',
                     'lifecycle_stage' => 'lead',
+                    'tags' => $tags,
                     'created_at' => date('Y-m-d H:i:s'),
                     'first_inquiry_date' => date('Y-m-d')
                 ];
 
                 $clientId = $this->db->insert('clients', $clientData);
+
+                $this->logger->info('Created new client from inquiry', [
+                    'client_id' => $clientId,
+                    'ghl_contact_id' => $ghlContactId
+                ]);
             } else {
                 $clientId = $client['id'];
+            }
+
+            // Check if inquiry already exists for this client
+            $existingInquiry = $this->db->queryOne(
+                "SELECT id FROM inquiries WHERE client_id = ? AND inquiry_date = ?",
+                [$clientId, $data['dateAdded'] ? date('Y-m-d', strtotime($data['dateAdded'])) : date('Y-m-d')]
+            );
+
+            if ($existingInquiry) {
+                $this->logger->info('Inquiry already exists, skipping', [
+                    'inquiry_id' => $existingInquiry['id'],
+                    'client_id' => $clientId
+                ]);
+
+                return $this->jsonResponse($response, [
+                    'success' => true,
+                    'data' => [
+                        'inquiry_id' => $existingInquiry['id'],
+                        'client_id' => $clientId,
+                        'already_exists' => true
+                    ]
+                ]);
             }
 
             // Insert inquiry
             $inquiryData = [
                 'client_id' => $clientId,
-                'inquiry_date' => $data['inquiry_date'] ?? date('Y-m-d'),
+                'inquiry_date' => $data['dateAdded'] ? date('Y-m-d', strtotime($data['dateAdded'])) : date('Y-m-d'),
                 'source' => $source,
-                'event_type' => $data['event_type'] ?? null,
-                'budget' => $data['budget'] ?? null,
+                'event_type' => $eventType,
+                'event_date' => $eventDate,
+                'budget' => $budget ? floatval($budget) : null,
                 'status' => $status,
                 'outcome' => $data['outcome'] ?? null,
+                'notes' => $notes,
                 'created_at' => date('Y-m-d H:i:s')
             ];
 
@@ -389,7 +583,9 @@ class WebhookController
 
             $this->logger->info('Recorded new inquiry', [
                 'inquiry_id' => $inquiryId,
-                'client_id' => $clientId
+                'client_id' => $clientId,
+                'event_type' => $eventType,
+                'budget' => $budget
             ]);
 
             // Refresh materialized views
@@ -405,7 +601,8 @@ class WebhookController
 
         } catch (\Exception $e) {
             $this->logger->error('Error processing inquiry webhook', [
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
             ]);
 
             return $this->jsonResponse($response, [
