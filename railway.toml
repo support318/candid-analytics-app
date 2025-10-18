@@ -1,17 +1,6 @@
 # Railway Multi-Service Configuration
 # Candid Analytics Application
 
-[build]
-builder = "DOCKERFILE"
-dockerfilePath = "Dockerfile"
-
-[deploy]
-startCommand = ""
-healthcheckPath = "/"
-healthcheckTimeout = 100
-restartPolicyType = "ON_FAILURE"
-restartPolicyMaxRetries = 10
-
 # API Service Configuration
 [[services]]
 name = "api"
