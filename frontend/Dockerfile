@@ -38,9 +38,17 @@ RUN chown -R nginx:nginx /usr/share/nginx/html && \
 # Expose port
 EXPOSE 80
 
-# Health check
+# Health check - use PORT variable
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider http://localhost/ || exit 1
+    CMD wget --no-verbose --tries=1 --spider http://localhost:${PORT:-80}/health || exit 1
 
-# Start Nginx
-CMD ["nginx", "-g", "daemon off;"]
+# Create startup script to inject PORT variable
+RUN echo '#!/bin/sh' > /docker-entrypoint.sh && \
+    echo 'PORT=${PORT:-80}' >> /docker-entrypoint.sh && \
+    echo 'sed -i "s/listen 80;/listen $PORT;/" /etc/nginx/conf.d/default.conf' >> /docker-entrypoint.sh && \
+    echo 'sed -i "s/listen \[::]\:80;/listen [::]:$PORT;/" /etc/nginx/conf.d/default.conf' >> /docker-entrypoint.sh && \
+    echo 'exec nginx -g "daemon off;"' >> /docker-entrypoint.sh && \
+    chmod +x /docker-entrypoint.sh
+
+# Start Nginx with PORT configuration
+CMD ["/docker-entrypoint.sh"]

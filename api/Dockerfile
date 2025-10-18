@@ -54,12 +54,15 @@ RUN chown -R www-data:www-data /var/www && \
 # Set ServerName to suppress warning
 RUN echo "ServerName localhost" >> /etc/apache2/apache2.conf
 
+# Configure Apache to listen on PORT environment variable
+RUN echo 'Listen ${PORT}' > /etc/apache2/ports.conf
+
 # Expose port (Railway will map this)
 EXPOSE 80
 
-# Health check
+# Health check - use PORT variable
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD curl -f http://localhost/api/health || exit 1
+    CMD curl -f http://localhost:${PORT:-80}/api/health || exit 1
 
-# Start Apache
-CMD ["apache2-foreground"]
+# Start Apache with PORT configuration
+CMD sed -i "s/80/${PORT:-80}/g" /etc/apache2/sites-available/000-default.conf && apache2-foreground
