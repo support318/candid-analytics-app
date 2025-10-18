@@ -39,8 +39,9 @@ COPY . .
 RUN mkdir -p /var/www/logs && \
     chmod 777 /var/www/logs
 
-# Configure Apache
-RUN echo '<Directory /var/www/html>' > /etc/apache2/conf-available/api.conf && \
+# Configure Apache DocumentRoot to /var/www/public
+RUN sed -i 's|DocumentRoot /var/www/html|DocumentRoot /var/www/public|g' /etc/apache2/sites-available/000-default.conf && \
+    echo '<Directory /var/www/public>' > /etc/apache2/conf-available/api.conf && \
     echo '  AllowOverride All' >> /etc/apache2/conf-available/api.conf && \
     echo '  Require all granted' >> /etc/apache2/conf-available/api.conf && \
     echo '  Options -Indexes +FollowSymLinks' >> /etc/apache2/conf-available/api.conf && \
