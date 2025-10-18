@@ -11,9 +11,9 @@ use Slim\Exception\HttpNotFoundException;
 // Autoload dependencies
 require __DIR__ . '/../vendor/autoload.php';
 
-// Load environment variables
+// Load environment variables (optional .env file for local development)
 $dotenv = Dotenv\Dotenv::createImmutable(dirname(__DIR__));
-$dotenv->load();
+$dotenv->safeLoad();
 
 // Create Container
 $container = new Container();
