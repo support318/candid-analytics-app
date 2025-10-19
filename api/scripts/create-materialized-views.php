@@ -31,11 +31,13 @@ try {
     echo "Connected to database successfully.\n";
 
     // Read the SQL file
-    $sqlFile = __DIR__ . '/../../database/create_all_materialized_views.sql';
+    $sqlFile = __DIR__ . '/../database/create_all_materialized_views.sql';
 
     if (!file_exists($sqlFile)) {
         throw new Exception("SQL file not found: {$sqlFile}");
     }
+
+    echo "Using SQL file: {$sqlFile}\n";
 
     $sql = file_get_contents($sqlFile);
 
