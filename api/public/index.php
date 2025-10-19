@@ -161,6 +161,9 @@ $app->get('/api/health', function (Request $request, Response $response) {
     return $response->withHeader('Content-Type', 'application/json');
 });
 
+// Setup Routes (temporary)
+require __DIR__ . '/../src/Routes/setup.php';
+
 // Authentication Routes
 require __DIR__ . '/../src/Routes/auth.php';
 
