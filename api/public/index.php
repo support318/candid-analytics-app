@@ -153,7 +153,7 @@ $app->get('/api/health', function (Request $request, Response $response) {
         "success" => true,
         "data" => [
             "status" => "healthy",
-            "version" => $_ENV['APP_VERSION'] ?? '1.0.0',
+            "version" => $_ENV['APP_VERSION'] ?? '1.0.1',
             "timestamp" => date('c')
         ]
     ];
