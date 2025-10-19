@@ -584,11 +584,24 @@ $app->get('/api/sync/test-invoices', function (Request $request, Response $respo
             throw new \Exception('GHL credentials not configured');
         }
 
-        // Call GHL Invoices API
-        $url = "https://services.leadconnectorhq.com/invoices/?locationId={$ghlLocationId}&limit=5";
-
+        // Test 1: Call contacts API to verify key works
+        $contactsUrl = "https://services.leadconnectorhq.com/contacts/?locationId={$ghlLocationId}&limit=1";
         $ch = curl_init();
-        curl_setopt($ch, CURLOPT_URL, $url);
+        curl_setopt($ch, CURLOPT_URL, $contactsUrl);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, [
+            "Authorization: Bearer {$ghlApiKey}",
+            "Version: 2021-07-28",
+            "Accept: application/json"
+        ]);
+        $contactsResponse = curl_exec($ch);
+        $contactsHttpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+
+        // Test 2: Call GHL Invoices API
+        $invoicesUrl = "https://services.leadconnectorhq.com/invoices/?locationId={$ghlLocationId}&limit=5";
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, $invoicesUrl);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($ch, CURLOPT_HTTPHEADER, [
             "Authorization: Bearer {$ghlApiKey}",
@@ -596,29 +609,31 @@ $app->get('/api/sync/test-invoices', function (Request $request, Response $respo
             "Accept: application/json",
             "Content-Type: application/json"
         ]);
-
         $invoicesResponse = curl_exec($ch);
-        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $invoicesHttpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         curl_close($ch);
-
-        if ($httpCode !== 200) {
-            throw new \Exception("GHL API returned status {$httpCode}: {$invoicesResponse}");
-        }
-
-        $invoicesData = json_decode($invoicesResponse, true);
 
         $data = [
             'success' => true,
-            'total_invoices' => count($invoicesData['invoices'] ?? []),
-            'sample_invoices' => $invoicesData['invoices'] ?? [],
-            'raw_response' => $invoicesData
+            'tests' => [
+                'contacts_api' => [
+                    'status' => $contactsHttpCode,
+                    'works' => $contactsHttpCode === 200,
+                    'response' => json_decode($contactsResponse, true)
+                ],
+                'invoices_api' => [
+                    'status' => $invoicesHttpCode,
+                    'works' => $invoicesHttpCode === 200,
+                    'response' => json_decode($invoicesResponse, true)
+                ]
+            ]
         ];
 
         $response->getBody()->write(json_encode($data, JSON_PRETTY_PRINT));
         return $response->withHeader('Content-Type', 'application/json');
 
     } catch (\Exception $e) {
-        $logger->error('Failed to fetch GHL invoices', ['error' => $e->getMessage()]);
+        $logger->error('Failed to test GHL APIs', ['error' => $e->getMessage()]);
 
         $data = [
             'success' => false,
