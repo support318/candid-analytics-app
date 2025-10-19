@@ -203,9 +203,10 @@ $app->get('/api/sync/projects-detail', function (Request $request, Response $res
     $response->getBody()->write(json_encode($data, JSON_PRETTY_PRINT));
     return $response
         ->withHeader('Content-Type', 'application/json')
-        ->withHeader('Cache-Control', 'no-cache, no-store, must-revalidate')
+        ->withHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
         ->withHeader('Pragma', 'no-cache')
-        ->withHeader('Expires', '0');
+        ->withHeader('Expires', '0')
+        ->withHeader('CDN-Cache-Control', 'no-store');  // Tell Cloudflare not to cache
 });
 
 /**
