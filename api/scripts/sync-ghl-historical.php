@@ -184,13 +184,18 @@ do {
             $contactsProcessed++;
             $ghlContactId = $contact['id'];
 
-            // SKIP contacts without first name AND email (incomplete data)
-            $firstName = $contact['firstName'] ?? $contact['first_name'] ?? null;
+            // SKIP contacts without email (need at least email for client identification)
+            $firstName = $contact['firstName'] ?? $contact['first_name'] ?? '';
             $email = $contact['email'] ?? null;
 
-            if (empty($firstName) || empty($email)) {
-                echo "  ⏭️  Skipping incomplete contact: ID {$ghlContactId} (no name/email)\n";
+            if (empty($email)) {
+                echo "  ⏭️  Skipping incomplete contact: ID {$ghlContactId} (no email)\n";
                 continue;
+            }
+
+            // Use "Unknown" as placeholder if no first name
+            if (empty($firstName)) {
+                $firstName = 'Unknown';
             }
 
             // Check if client already exists
