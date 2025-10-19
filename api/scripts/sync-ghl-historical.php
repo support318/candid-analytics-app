@@ -184,6 +184,15 @@ do {
             $contactsProcessed++;
             $ghlContactId = $contact['id'];
 
+            // SKIP contacts without first name AND email (incomplete data)
+            $firstName = $contact['firstName'] ?? $contact['first_name'] ?? null;
+            $email = $contact['email'] ?? null;
+
+            if (empty($firstName) || empty($email)) {
+                echo "  ⏭️  Skipping incomplete contact: ID {$ghlContactId} (no name/email)\n";
+                continue;
+            }
+
             // Check if client already exists
             $existingClient = $db->queryOne(
                 "SELECT id FROM clients WHERE ghl_contact_id = ?",
@@ -204,9 +213,9 @@ do {
 
             $clientData = [
                 'ghl_contact_id' => $ghlContactId,
-                'first_name' => $contact['firstName'] ?? $contact['first_name'] ?? 'Unknown',
+                'first_name' => $firstName,
                 'last_name' => $contact['lastName'] ?? $contact['last_name'] ?? '',
-                'email' => $contact['email'] ?? null,
+                'email' => $email,
                 'phone' => $contact['phone'] ?? null,
                 'lead_source' => $contact['source'] ?? 'unknown',
                 'status' => 'active',

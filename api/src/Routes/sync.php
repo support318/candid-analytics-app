@@ -307,3 +307,87 @@ $app->get('/api/sync/analyze-data-quality', function (Request $request, Response
 
     return $response->withHeader('Content-Type', 'application/json');
 });
+
+/**
+ * Clear database and re-sync with clean data
+ * POST /api/sync/clear-and-resync
+ */
+$app->post('/api/sync/clear-and-resync', function (Request $request, Response $response) use ($container) {
+    $logger = $container->get('logger');
+    $db = $container->get('db');
+
+    try {
+        $logger->info('Starting database clear and re-sync');
+
+        // Clear all existing data (CASCADE will delete related records)
+        $db->execute("TRUNCATE clients, projects, inquiries, consultations, revenue RESTART IDENTITY CASCADE");
+        $logger->info('Database cleared');
+
+        // Run historical sync
+        $output = [];
+        $return_var = 0;
+        $scriptPath = __DIR__ . '/../../scripts/sync-ghl-historical.php';
+        $command = 'php ' . escapeshellarg($scriptPath);
+
+        exec($command . ' 2>&1', $output, $return_var);
+
+        $syncOutput = implode("\n", $output);
+        $logger->info('Historical sync completed', [
+            'exit_code' => $return_var,
+            'output' => $syncOutput
+        ]);
+
+        // Refresh materialized views
+        $views = [
+            'mv_priority_kpis',
+            'mv_revenue_analytics',
+            'mv_revenue_by_location',
+            'mv_sales_funnel',
+            'mv_lead_source_performance',
+            'mv_operational_efficiency',
+            'mv_staff_productivity',
+            'mv_client_satisfaction',
+            'mv_client_retention',
+            'mv_marketing_performance',
+            'mv_venue_performance',
+            'mv_time_allocation',
+            'mv_seasonal_patterns'
+        ];
+
+        $refreshed = [];
+        foreach ($views as $view) {
+            try {
+                $db->execute("REFRESH MATERIALIZED VIEW $view");
+                $refreshed[] = $view;
+            } catch (\Exception $e) {
+                // Skip if view doesn't exist
+                if (strpos($e->getMessage(), 'does not exist') === false) {
+                    $logger->error("Failed to refresh view: $view", ['error' => $e->getMessage()]);
+                }
+            }
+        }
+
+        $logger->info('Materialized views refreshed', ['refreshed' => $refreshed]);
+
+        $response->getBody()->write(json_encode([
+            'success' => $return_var === 0,
+            'message' => 'Database cleared and re-synced with clean GHL data',
+            'sync_output' => $syncOutput,
+            'views_refreshed' => count($refreshed)
+        ]));
+
+        return $response->withHeader('Content-Type', 'application/json');
+
+    } catch (\Exception $e) {
+        $logger->error('Clear and re-sync failed', ['error' => $e->getMessage()]);
+
+        $response->getBody()->write(json_encode([
+            'success' => false,
+            'error' => $e->getMessage()
+        ]));
+
+        return $response
+            ->withStatus(500)
+            ->withHeader('Content-Type', 'application/json');
+    }
+});
