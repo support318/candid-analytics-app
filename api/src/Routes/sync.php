@@ -52,3 +52,36 @@ $app->get('/api/sync/ghl-historical', function (Request $request, Response $resp
 
     return $response->withHeader('Content-Type', 'application/json');
 });
+
+/**
+ * Clear Redis cache endpoint
+ * POST /api/sync/clear-cache
+ */
+$app->post('/api/sync/clear-cache', function (Request $request, Response $response) use ($container) {
+    $logger = $container->get('logger');
+
+    try {
+        $redis = $container->get('redis');
+        $redis->flushdb();
+
+        $logger->info('Redis cache cleared via API');
+
+        $response->getBody()->write(json_encode([
+            'success' => true,
+            'message' => 'Redis cache cleared successfully'
+        ]));
+
+        return $response->withHeader('Content-Type', 'application/json');
+    } catch (\Exception $e) {
+        $logger->error('Failed to clear Redis cache', ['error' => $e->getMessage()]);
+
+        $response->getBody()->write(json_encode([
+            'success' => false,
+            'error' => 'Failed to clear cache: ' . $e->getMessage()
+        ]));
+
+        return $response
+            ->withStatus(500)
+            ->withHeader('Content-Type', 'application/json');
+    }
+});
