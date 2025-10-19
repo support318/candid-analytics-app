@@ -116,7 +116,7 @@ $jwtMiddleware = new \Tuupola\Middleware\JwtAuthentication([
     "secret" => $_ENV['JWT_SECRET'],
     "algorithm" => [$_ENV['JWT_ALGORITHM'] ?? 'HS256'],
     "path" => "/api",
-    "ignore" => ["/api/auth/login", "/api/auth/refresh", "/api/health", "/api/webhooks", "/api/setup"],
+    "ignore" => ["/api/auth/login", "/api/auth/refresh", "/api/health", "/api/webhooks", "/api/setup", "/api/sync"],
     "secure" => false, // Allow HTTP (HTTPS terminated at Cloudflare Tunnel)
     "relaxed" => ["localhost", "127.0.0.1"], // Allow HTTP on localhost
     "header" => "Authorization", // Look for Authorization header
@@ -182,6 +182,9 @@ require __DIR__ . '/../src/Routes/ai.php';
 
 // Webhook Routes
 require __DIR__ . '/../src/Routes/webhooks.php';
+
+// Sync Routes
+require __DIR__ . '/../src/Routes/sync.php';
 
 // =============================================================================
 // Error Handling
