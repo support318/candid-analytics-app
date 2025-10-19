@@ -183,6 +183,32 @@ $app->post('/api/sync/refresh-views', function (Request $request, Response $resp
 });
 
 /**
+ * Direct raw database query endpoint
+ * GET /api/sync/raw-db-check
+ */
+$app->get('/api/sync/raw-db-check', function (Request $request, Response $response) use ($container) {
+    $db = $container->get('db');
+
+    // Raw queries to see actual database state
+    $data = [
+        'clients_count' => $db->queryScalar("SELECT COUNT(*) FROM clients"),
+        'clients_with_email' => $db->queryScalar("SELECT COUNT(*) FROM clients WHERE email IS NOT NULL AND email != ''"),
+        'clients_with_name' => $db->queryScalar("SELECT COUNT(*) FROM clients WHERE first_name IS NOT NULL AND first_name != ''"),
+        'sample_clients' => $db->query("SELECT id, ghl_contact_id, first_name, last_name, email, phone, created_at FROM clients ORDER BY id DESC LIMIT 10"),
+        'table_stats' => [
+            'clients' => $db->queryScalar("SELECT COUNT(*) FROM clients"),
+            'projects' => $db->queryScalar("SELECT COUNT(*) FROM projects"),
+            'inquiries' => $db->queryScalar("SELECT COUNT(*) FROM inquiries"),
+            'consultations' => $db->queryScalar("SELECT COUNT(*) FROM consultations"),
+            'revenue' => $db->queryScalar("SELECT COUNT(*) FROM revenue")
+        ]
+    ];
+
+    $response->getBody()->write(json_encode($data, JSON_PRETTY_PRINT));
+    return $response->withHeader('Content-Type', 'application/json');
+});
+
+/**
  * Debug endpoint to check database contents
  * GET /api/sync/data-check
  */
