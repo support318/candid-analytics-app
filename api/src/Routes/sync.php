@@ -181,3 +181,42 @@ $app->post('/api/sync/refresh-views', function (Request $request, Response $resp
             ->withHeader('Content-Type', 'application/json');
     }
 });
+
+/**
+ * Debug endpoint to check database contents
+ * GET /api/sync/data-check
+ */
+$app->get('/api/sync/data-check', function (Request $request, Response $response) use ($container) {
+    $db = $container->get('db');
+
+    $data = [
+        'clients' => [
+            'total' => $db->queryScalar("SELECT COUNT(*) FROM clients"),
+            'active' => $db->queryScalar("SELECT COUNT(*) FROM clients WHERE status = 'active'"),
+            'sample' => $db->query("SELECT id, first_name, last_name, email, lifecycle_stage, created_at FROM clients LIMIT 5")
+        ],
+        'projects' => [
+            'total' => $db->queryScalar("SELECT COUNT(*) FROM projects"),
+            'by_status' => $db->query("SELECT status, COUNT(*) as count FROM projects GROUP BY status"),
+            'sample' => $db->query("SELECT id, project_name, status, total_revenue, booking_date, created_at FROM projects LIMIT 5")
+        ],
+        'inquiries' => [
+            'total' => $db->queryScalar("SELECT COUNT(*) FROM inquiries"),
+            'sample' => $db->query("SELECT id, inquiry_text, status, created_at FROM inquiries LIMIT 3")
+        ],
+        'consultations' => [
+            'total' => $db->queryScalar("SELECT COUNT(*) FROM consultations"),
+        ],
+        'revenue' => [
+            'total_records' => $db->queryScalar("SELECT COUNT(*) FROM revenue"),
+            'total_amount' => $db->queryScalar("SELECT COALESCE(SUM(amount), 0) FROM revenue"),
+        ],
+        'materialized_views' => [
+            'priority_kpis' => $db->queryOne("SELECT * FROM mv_priority_kpis LIMIT 1"),
+            'sales_funnel' => $db->query("SELECT * FROM mv_sales_funnel LIMIT 5"),
+        ]
+    ];
+
+    $response->getBody()->write(json_encode($data, JSON_PRETTY_PRINT));
+    return $response->withHeader('Content-Type', 'application/json');
+});
