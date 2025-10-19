@@ -14,10 +14,19 @@ export const apiClient = axios.create({
 // Request interceptor - Add JWT token
 apiClient.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
-    const { accessToken } = useAuthStore.getState()
+    // Read directly from localStorage to avoid Zustand hydration timing issues
+    const authStore = localStorage.getItem('auth-storage')
+    if (authStore) {
+      try {
+        const { state } = JSON.parse(authStore)
+        const accessToken = state?.accessToken
 
-    if (accessToken && config.headers) {
-      config.headers.Authorization = `Bearer ${accessToken}`
+        if (accessToken && config.headers) {
+          config.headers.Authorization = `Bearer ${accessToken}`
+        }
+      } catch (error) {
+        console.error('Error parsing auth storage:', error)
+      }
     }
 
     return config
