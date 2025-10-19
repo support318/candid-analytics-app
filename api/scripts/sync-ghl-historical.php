@@ -301,10 +301,15 @@ do {
             // Get event date from custom field F9tRB3GmV9ksN3gpOZuz
             $eventDate = null;
             if (isset($customFields['F9tRB3GmV9ksN3gpOZuz']) && !empty($customFields['F9tRB3GmV9ksN3gpOZuz'])) {
-                $timestamp = strtotime($customFields['F9tRB3GmV9ksN3gpOZuz']);
+                $dateString = $customFields['F9tRB3GmV9ksN3gpOZuz'];
+                echo "  DEBUG: Event date string from GHL: '$dateString'\n";
+                $timestamp = strtotime($dateString);
+                echo "  DEBUG: strtotime result: " . ($timestamp === false ? "FALSE" : date('Y-m-d', $timestamp)) . "\n";
                 if ($timestamp !== false) {
                     $eventDate = date('Y-m-d', $timestamp);
                 }
+            } else {
+                echo "  DEBUG: No event date custom field found for opportunity: {$opp['name']}\n";
             }
 
             // Get event type from custom field 0hj6ZfHbELOE4HwXEI60 or opportunity name
