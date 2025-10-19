@@ -441,3 +441,15 @@ $app->post('/api/sync/clear-and-resync', function (Request $request, Response $r
             ->withHeader('Content-Type', 'application/json');
     }
 });
+
+$app->get('/api/sync/debug-ghl-opportunity', function (Request $request, Response $response) use ($container) {
+    $logger = $container->get('logger');
+    $output = [];
+    $return_var = 0;
+    $scriptPath = __DIR__ . '/../../scripts/debug-ghl-opportunity.php';
+    $command = 'php ' . escapeshellarg($scriptPath);
+    exec($command . ' 2>&1', $output, $return_var);
+    $logger->info('GHL opportunity debug triggered');
+    $response->getBody()->write(json_encode(['success' => $return_var === 0, 'output' => implode("\\n", $output)]));
+    return $response->withHeader('Content-Type', 'application/json');
+});
