@@ -186,7 +186,7 @@ WITH monthly_funnel AS (
         COUNT(*) FILTER (WHERE i.status NOT IN ('booked', 'lost', 'abandoned')) as active_leads,
         AVG(EXTRACT(EPOCH FROM (p.booking_date - i.inquiry_date)) / 86400)::NUMERIC as avg_days_to_booking
     FROM inquiries i
-    LEFT JOIN consultations c ON i.id = c.inquiry_id
+    LEFT JOIN consultations c ON i.client_id = c.client_id
     LEFT JOIN projects p ON i.client_id = p.client_id
         AND p.booking_date >= i.inquiry_date
         AND p.booking_date <= i.inquiry_date + INTERVAL '90 days'
@@ -235,7 +235,7 @@ WITH lead_sources AS (
         COUNT(*) FILTER (WHERE c.id IS NOT NULL) as consultations_booked,
         SUM(COALESCE(p.total_revenue, 0)) as total_revenue
     FROM inquiries i
-    LEFT JOIN consultations c ON i.id = c.inquiry_id
+    LEFT JOIN consultations c ON i.client_id = c.client_id
     LEFT JOIN projects p ON i.client_id = p.client_id
         AND p.booking_date >= i.inquiry_date
         AND p.booking_date <= i.inquiry_date + INTERVAL '90 days'
