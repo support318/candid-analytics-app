@@ -290,27 +290,52 @@ do {
             $rawStatus = strtolower($opp['status'] ?? $opp['pipelineStage'] ?? 'lead');
             $status = $stageMapping[$rawStatus] ?? 'lead';
 
-            // Determine event type from opportunity name or custom field
+            // Extract custom fields from array
+            $customFields = [];
+            if (isset($opp['customFields']) && is_array($opp['customFields'])) {
+                foreach ($opp['customFields'] as $field) {
+                    $customFields[$field['id']] = $field['fieldValueString'] ?? null;
+                }
+            }
+
+            // Get event date from custom field F9tRB3GmV9ksN3gpOZuz
+            $eventDate = null;
+            if (isset($customFields['F9tRB3GmV9ksN3gpOZuz'])) {
+                $eventDate = date('Y-m-d', strtotime($customFields['F9tRB3GmV9ksN3gpOZuz']));
+            }
+
+            // Get event type from custom field 0hj6ZfHbELOE4HwXEI60 or opportunity name
             $eventType = 'other';
-            $oppName = strtolower($opp['name'] ?? '');
-            if (strpos($oppName, 'wedding') !== false) $eventType = 'wedding';
-            elseif (strpos($oppName, 'portrait') !== false) $eventType = 'portrait';
-            elseif (strpos($oppName, 'event') !== false) $eventType = 'event';
-            elseif (strpos($oppName, 'corporate') !== false) $eventType = 'corporate';
-            elseif (strpos($oppName, 'real estate') !== false || strpos($oppName, 'real-estate') !== false) $eventType = 'real-estate';
+            if (isset($customFields['0hj6ZfHbELOE4HwXEI60'])) {
+                $fieldValue = strtolower($customFields['0hj6ZfHbELOE4HwXEI60']);
+                if (strpos($fieldValue, 'wedding') !== false) $eventType = 'wedding';
+                elseif (strpos($fieldValue, 'engagement') !== false) $eventType = 'engagement';
+                elseif (strpos($fieldValue, 'portrait') !== false) $eventType = 'portrait';
+                elseif (strpos($fieldValue, 'corporate') !== false) $eventType = 'corporate';
+                elseif (strpos($fieldValue, 'real estate') !== false) $eventType = 'real-estate';
+            } else {
+                // Fallback to opportunity name
+                $oppName = strtolower($opp['name'] ?? '');
+                if (strpos($oppName, 'wedding') !== false) $eventType = 'wedding';
+                elseif (strpos($oppName, 'portrait') !== false) $eventType = 'portrait';
+                elseif (strpos($oppName, 'event') !== false) $eventType = 'event';
+                elseif (strpos($oppName, 'corporate') !== false) $eventType = 'corporate';
+                elseif (strpos($oppName, 'real estate') !== false || strpos($oppName, 'real-estate') !== false) $eventType = 'real-estate';
+            }
 
             $projectData = [
                 'client_id' => $client['id'],
                 'project_name' => $opp['name'] ?? 'Unknown Project',
                 'booking_date' => isset($opp['dateAdded']) ? date('Y-m-d', strtotime($opp['dateAdded'])) : date('Y-m-d'),
-                'event_date' => isset($opp['customFields']['kvDBYw8fixMftjWdF51g']) ? date('Y-m-d', strtotime($opp['customFields']['kvDBYw8fixMftjWdF51g'])) : date('Y-m-d'),
+                'event_date' => $eventDate ?? date('Y-m-d'),
                 'event_type' => $eventType,
                 'status' => $status,
                 'total_revenue' => floatval($opp['monetaryValue'] ?? 0),
                 'metadata' => json_encode([
                     'ghl_opportunity_id' => $opp['id'],
                     'pipeline_id' => $opp['pipelineId'] ?? null,
-                    'stage_id' => $opp['pipelineStageId'] ?? null
+                    'stage_id' => $opp['pipelineStageId'] ?? null,
+                    'custom_fields' => $customFields
                 ]),
                 'created_at' => isset($opp['dateAdded']) ? date('Y-m-d H:i:s', strtotime($opp['dateAdded'])) : date('Y-m-d H:i:s')
             ];
