@@ -220,3 +220,32 @@ $app->get('/api/sync/data-check', function (Request $request, Response $response
     $response->getBody()->write(json_encode($data, JSON_PRETTY_PRINT));
     return $response->withHeader('Content-Type', 'application/json');
 });
+
+/**
+ * Debug GHL API structure
+ * GET /api/sync/debug-ghl-api
+ */
+$app->get('/api/sync/debug-ghl-api', function (Request $request, Response $response) use ($container) {
+    $logger = $container->get('logger');
+
+    $output = [];
+    $return_var = 0;
+
+    $scriptPath = __DIR__ . '/../../scripts/debug-ghl-api.php';
+    $command = 'php ' . escapeshellarg($scriptPath);
+
+    exec($command . ' 2>&1', $output, $return_var);
+
+    $logger->info('GHL API debug triggered', [
+        'exit_code' => $return_var,
+        'output' => implode("\n", $output)
+    ]);
+
+    $response->getBody()->write(json_encode([
+        'success' => $return_var === 0,
+        'output' => implode("\n", $output),
+        'exit_code' => $return_var
+    ]));
+
+    return $response->withHeader('Content-Type', 'application/json');
+});
