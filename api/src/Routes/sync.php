@@ -453,3 +453,32 @@ $app->get('/api/sync/debug-ghl-opportunity', function (Request $request, Respons
     $response->getBody()->write(json_encode(['success' => $return_var === 0, 'output' => implode("\\n", $output)]));
     return $response->withHeader('Content-Type', 'application/json');
 });
+
+/**
+ * Debug database connection
+ * GET /api/sync/debug-db-connection
+ */
+$app->get('/api/sync/debug-db-connection', function (Request $request, Response $response) use ($container) {
+    $db = $container->get('db');
+
+    // Get actual database name being queried
+    $dbInfo = $db->queryOne("SELECT current_database() as db_name, current_schema() as schema_name, version() as pg_version");
+
+    // Get actual project count and sample
+    $count = $db->queryScalar("SELECT COUNT(*) FROM projects");
+    $sample = $db->query("SELECT id, project_name, event_date, created_at FROM projects ORDER BY id LIMIT 3");
+
+    $data = [
+        'env_vars' => [
+            'DB_HOST' => $_ENV['DB_HOST'] ?? 'NOT_SET',
+            'DB_NAME' => $_ENV['DB_NAME'] ?? 'NOT_SET',
+            'DB_USER' => $_ENV['DB_USER'] ?? 'NOT_SET',
+        ],
+        'actual_connection' => $dbInfo,
+        'project_count' => $count,
+        'sample_projects' => $sample
+    ];
+
+    $response->getBody()->write(json_encode($data, JSON_PRETTY_PRINT));
+    return $response->withHeader('Content-Type', 'application/json');
+});
