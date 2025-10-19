@@ -613,24 +613,32 @@ $app->get('/api/sync/test-invoices', function (Request $request, Response $respo
         $invoicesHttpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         curl_close($ch);
 
+        $contactsData = json_decode($contactsResponse, true);
+        $invoicesData = json_decode($invoicesResponse, true);
+
         $data = [
             'success' => true,
+            'api_key_valid' => $contactsHttpCode === 200,
             'tests' => [
                 'contacts_api' => [
                     'status' => $contactsHttpCode,
                     'works' => $contactsHttpCode === 200,
-                    'response' => json_decode($contactsResponse, true)
+                    'sample' => isset($contactsData['contacts'][0]) ? $contactsData['contacts'][0] : null,
+                    'error' => $contactsHttpCode !== 200 ? $contactsData : null
                 ],
                 'invoices_api' => [
                     'status' => $invoicesHttpCode,
                     'works' => $invoicesHttpCode === 200,
-                    'response' => json_decode($invoicesResponse, true)
+                    'response' => $invoicesData,
+                    'diagnosis' => $invoicesHttpCode === 403 ? 'API key lacks invoices permission OR invoices feature not available in your GHL plan' : null
                 ]
             ]
         ];
 
         $response->getBody()->write(json_encode($data, JSON_PRETTY_PRINT));
-        return $response->withHeader('Content-Type', 'application/json');
+        return $response
+            ->withHeader('Content-Type', 'application/json')
+            ->withStatus($contactsHttpCode === 200 ? 200 : 500);
 
     } catch (\Exception $e) {
         $logger->error('Failed to test GHL APIs', ['error' => $e->getMessage()]);
