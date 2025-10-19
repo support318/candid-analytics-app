@@ -189,7 +189,11 @@ $app->post('/api/sync/refresh-views', function (Request $request, Response $resp
 $app->get('/api/sync/projects-detail', function (Request $request, Response $response) use ($container) {
     $db = $container->get('db');
 
+    // Add database connection debugging
+    $dbInfo = $db->queryOne("SELECT current_database() as db_name, current_schema() as schema_name");
+
     $data = [
+        'debug_connection' => $dbInfo,  // Show which database we're actually connected to
         'total' => $db->queryScalar("SELECT COUNT(*) FROM projects"),
         'by_status' => $db->query("SELECT status, COUNT(*) as count FROM projects GROUP BY status"),
         'all_projects' => $db->query("SELECT id, project_name, status, total_revenue, booking_date, event_date, created_at FROM projects ORDER BY created_at DESC"),
