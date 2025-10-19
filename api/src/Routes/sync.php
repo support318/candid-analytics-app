@@ -197,7 +197,11 @@ $app->get('/api/sync/projects-detail', function (Request $request, Response $res
     ];
 
     $response->getBody()->write(json_encode($data, JSON_PRETTY_PRINT));
-    return $response->withHeader('Content-Type', 'application/json');
+    return $response
+        ->withHeader('Content-Type', 'application/json')
+        ->withHeader('Cache-Control', 'no-cache, no-store, must-revalidate')
+        ->withHeader('Pragma', 'no-cache')
+        ->withHeader('Expires', '0');
 });
 
 /**
