@@ -280,15 +280,52 @@ do {
                 continue;
             }
 
-            // Find client
+            // Find or create client
             $client = $db->queryOne(
                 "SELECT id FROM clients WHERE ghl_contact_id = ?",
                 [$ghlContactId]
             );
 
             if (!$client) {
-                echo "  ⚠️  Client not found for opportunity: {$opp['name']}\n";
-                continue;
+                // Create client from opportunity contact data
+                $contactData = $opp['contact'] ?? [];
+                $email = $contactData['email'] ?? null;
+
+                if (!$email) {
+                    echo "  ⚠️  Skipping opportunity (no contact email): {$opp['name']}\n";
+                    continue;
+                }
+
+                $firstName = $contactData['name'] ?? 'Unknown';
+                // Try to split name into first/last
+                $nameParts = explode(' ', $firstName, 2);
+                $firstName = $nameParts[0] ?? 'Unknown';
+                $lastName = $nameParts[1] ?? '';
+
+                $clientData = [
+                    'ghl_contact_id' => $ghlContactId,
+                    'first_name' => $firstName,
+                    'last_name' => $lastName,
+                    'email' => $email,
+                    'phone' => $contactData['phone'] ?? null,
+                    'lead_source' => 'opportunity',
+                    'status' => 'active',
+                    'lifecycle_stage' => 'lead',
+                    'first_inquiry_date' => isset($opp['dateAdded']) ? date('Y-m-d', strtotime($opp['dateAdded'])) : date('Y-m-d'),
+                    'created_at' => isset($opp['dateAdded']) ? date('Y-m-d H:i:s', strtotime($opp['dateAdded'])) : date('Y-m-d H:i:s')
+                ];
+
+                if (!$dryRun) {
+                    $db->insert('clients', $clientData);
+                    $stats['clients_created']++;
+                    echo "  ✨ Created client from opportunity: {$firstName} {$lastName}\n";
+                }
+
+                // Re-fetch the client
+                $client = $db->queryOne(
+                    "SELECT id FROM clients WHERE ghl_contact_id = ?",
+                    [$ghlContactId]
+                );
             }
 
             // Map stage to status
