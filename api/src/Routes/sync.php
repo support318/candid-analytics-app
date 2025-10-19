@@ -536,33 +536,23 @@ $app->get('/api/sync/check-custom-fields', function (Request $request, Response 
     $db = $container->get('db');
 
     try {
-        // Get sample projects with metadata->custom_fields
+        // Get sample projects with metadata
         $projects = $db->query("
             SELECT
                 id,
                 project_name,
                 status,
                 total_revenue,
-                metadata,
-                metadata->'custom_fields' as custom_fields
+                metadata
             FROM projects
             WHERE metadata IS NOT NULL
-            AND metadata->'custom_fields' IS NOT NULL
             ORDER BY created_at DESC
-            LIMIT 10
-        ");
-
-        // Get unique custom field keys across all projects
-        $fieldKeys = $db->query("
-            SELECT DISTINCT jsonb_object_keys(metadata->'custom_fields') as field_key
-            FROM projects
-            WHERE metadata->'custom_fields' IS NOT NULL
+            LIMIT 5
         ");
 
         $data = [
             'success' => true,
-            'total_projects_with_custom_fields' => count($projects),
-            'unique_field_keys' => $fieldKeys,
+            'note' => 'Check metadata->custom_fields to see available GHL custom field IDs',
             'sample_projects' => $projects
         ];
 
