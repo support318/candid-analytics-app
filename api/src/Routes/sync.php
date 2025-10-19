@@ -527,3 +527,53 @@ $app->post('/api/sync/recreate-priority-kpis', function (Request $request, Respo
         return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
     }
 });
+
+/**
+ * Check custom fields in projects
+ * GET /api/sync/check-custom-fields
+ */
+$app->get('/api/sync/check-custom-fields', function (Request $request, Response $response) use ($container) {
+    $db = $container->get('db');
+
+    try {
+        // Get sample projects with custom_fields
+        $projects = $db->query("
+            SELECT
+                id,
+                project_name,
+                status,
+                total_revenue,
+                custom_fields
+            FROM projects
+            WHERE custom_fields IS NOT NULL
+            AND jsonb_typeof(custom_fields) = 'object'
+            ORDER BY created_at DESC
+            LIMIT 10
+        ");
+
+        // Get unique custom field keys
+        $fieldKeys = $db->query("
+            SELECT DISTINCT jsonb_object_keys(custom_fields) as field_key
+            FROM projects
+            WHERE custom_fields IS NOT NULL
+        ");
+
+        $data = [
+            'success' => true,
+            'total_projects_with_custom_fields' => count($projects),
+            'unique_field_keys' => $fieldKeys,
+            'sample_projects' => $projects
+        ];
+
+        $response->getBody()->write(json_encode($data, JSON_PRETTY_PRINT));
+        return $response->withHeader('Content-Type', 'application/json');
+
+    } catch (\Exception $e) {
+        $data = [
+            'success' => false,
+            'error' => $e->getMessage()
+        ];
+        $response->getBody()->write(json_encode($data, JSON_PRETTY_PRINT));
+        return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
+    }
+});
