@@ -191,8 +191,8 @@ const SalesFunnelPage = () => {
                   <TableCell component="th" scope="row" sx={{ fontWeight: 'bold' }}>
                     {stage.stage}
                   </TableCell>
-                  <TableCell align="right">{stage.count}</TableCell>
-                  <TableCell align="right">${stage.value.toLocaleString()}</TableCell>
+                  <TableCell align="right">{stage.count ?? 0}</TableCell>
+                  <TableCell align="right">${(stage.value ?? 0).toLocaleString()}</TableCell>
                   <TableCell align="right">
                     <Typography
                       variant="body2"

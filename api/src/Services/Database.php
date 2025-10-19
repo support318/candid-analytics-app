@@ -210,9 +210,9 @@ class Database
         // Aggregate monthly data into funnel stages
         $sql = "WITH funnel_totals AS (
                     SELECT
-                        SUM(total_inquiries) as total_inquiries,
-                        SUM(consultations_booked) as consultations_booked,
-                        SUM(projects_booked) as projects_booked
+                        COALESCE(SUM(total_inquiries), 0) as total_inquiries,
+                        COALESCE(SUM(consultations_booked), 0) as consultations_booked,
+                        COALESCE(SUM(projects_booked), 0) as projects_booked
                     FROM mv_sales_funnel
                     WHERE month >= CURRENT_DATE - INTERVAL '$months months'
                 )
