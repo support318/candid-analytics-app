@@ -1,0 +1,3 @@
+contact_id,invoice_id,customer_name,email,amount,payment_date,status,currency
+kCGJh2yxGzRMdMqYWVHf,INV-001,Liz Katz,liz@example.com,813.17,2025-05-04,paid,USD
+kCGJh2yxGzRMdMqYWVHf,INV-002,Liz Katz,liz@example.com,813.17,2025-10-01,paid,USD
