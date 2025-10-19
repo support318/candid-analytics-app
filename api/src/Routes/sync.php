@@ -202,7 +202,7 @@ $app->get('/api/sync/data-check', function (Request $request, Response $response
         ],
         'inquiries' => [
             'total' => $db->queryScalar("SELECT COUNT(*) FROM inquiries"),
-            'sample' => $db->query("SELECT id, inquiry_text, status, created_at FROM inquiries LIMIT 3")
+            'sample' => $db->query("SELECT id, client_id, inquiry_date, source, event_type, status, created_at FROM inquiries LIMIT 3")
         ],
         'consultations' => [
             'total' => $db->queryScalar("SELECT COUNT(*) FROM consultations"),
