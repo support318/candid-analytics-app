@@ -336,6 +336,20 @@ class WebhookController
     /**
      * Receive revenue/payment webhook
      * POST /api/webhooks/revenue
+     *
+     * Handles GHL Invoice.Paid webhook events
+     * Expected payload:
+     * - contactId: GHL contact ID
+     * - altId: Invoice ID
+     * - altType: "invoice"
+     * - amount: Total invoice amount
+     * - amountPaid: Amount paid
+     * - name: Invoice/Customer name
+     * - email: Customer email
+     * - currency: Currency code (USD, etc.)
+     * - status: "paid"
+     * - createdAt: Invoice creation date
+     * - updatedAt: Invoice update/payment date
      */
     public function receiveRevenue(Request $request, Response $response): Response
     {
@@ -355,61 +369,160 @@ class WebhookController
         }
 
         try {
-            $ghlContactId = $data['contact_id'] ?? null;
-            $amount = $data['amount'] ?? 0;
-            $paymentDate = $data['payment_date'] ?? date('Y-m-d');
-            $paymentMethod = $data['payment_method'] ?? 'other';
+            // Support both GHL invoice webhooks and generic payment webhooks
+            $ghlContactId = $data['contactId'] ?? $data['contact_id'] ?? null;
+            $invoiceId = $data['altId'] ?? $data['invoice_id'] ?? null;
+            $amount = $data['amountPaid'] ?? $data['amount'] ?? 0;
+            $totalAmount = $data['amount'] ?? $amount;
+            $paymentDate = isset($data['updatedAt']) ? date('Y-m-d', strtotime($data['updatedAt'])) : ($data['payment_date'] ?? date('Y-m-d'));
+            $paymentMethod = $data['payment_method'] ?? 'online';
+            $status = $data['status'] ?? 'paid';
+
+            $this->logger->info('Processing invoice payment webhook', [
+                'contact_id' => $ghlContactId,
+                'invoice_id' => $invoiceId,
+                'amount' => $amount,
+                'total_amount' => $totalAmount,
+                'status' => $status
+            ]);
 
             if (!$ghlContactId || $amount <= 0) {
                 return $this->jsonResponse($response, [
                     'success' => false,
-                    'error' => 'Missing required fields: contact_id and amount'
+                    'error' => 'Missing required fields: contactId/contact_id and amount'
                 ], 400);
             }
 
-            // Find client
+            // Find client by GHL contact ID
             $client = $this->db->queryOne(
                 "SELECT id FROM clients WHERE ghl_contact_id = ?",
                 [$ghlContactId]
             );
 
             if (!$client) {
-                return $this->jsonResponse($response, [
-                    'success' => false,
-                    'error' => 'Client not found'
-                ], 404);
+                $this->logger->warning('Client not found, creating from invoice webhook', [
+                    'ghl_contact_id' => $ghlContactId
+                ]);
+
+                // Create client from invoice data
+                $clientData = [
+                    'ghl_contact_id' => $ghlContactId,
+                    'first_name' => $data['name'] ?? 'Unknown',
+                    'last_name' => '',
+                    'email' => $data['email'] ?? null,
+                    'status' => 'active',
+                    'lifecycle_stage' => 'customer',
+                    'created_at' => date('Y-m-d H:i:s')
+                ];
+
+                $clientId = $this->db->insert('clients', $clientData);
+                $this->logger->info('Created new client from invoice', ['client_id' => $clientId]);
+            } else {
+                $clientId = $client['id'];
+
+                // Update client to customer if paying invoice
+                $this->db->update('clients', [
+                    'lifecycle_stage' => 'customer',
+                    'updated_at' => date('Y-m-d H:i:s')
+                ], ['id' => $clientId]);
             }
 
             // Find most recent project for this client
             $project = $this->db->queryOne(
-                "SELECT id FROM projects WHERE client_id = ? ORDER BY created_at DESC LIMIT 1",
-                [$client['id']]
+                "SELECT id, total_revenue FROM projects WHERE client_id = ? ORDER BY created_at DESC LIMIT 1",
+                [$clientId]
             );
 
             if (!$project) {
-                return $this->jsonResponse($response, [
-                    'success' => false,
-                    'error' => 'No project found for client'
-                ], 404);
+                // Create a project if one doesn't exist
+                $projectData = [
+                    'client_id' => $clientId,
+                    'project_name' => $data['name'] ?? 'Project from Invoice',
+                    'booking_date' => $paymentDate,
+                    'event_date' => $paymentDate,
+                    'event_type' => 'other',
+                    'status' => 'booked',
+                    'total_revenue' => $amount,
+                    'metadata' => json_encode(['ghl_invoice_id' => $invoiceId]),
+                    'created_at' => date('Y-m-d H:i:s')
+                ];
+
+                $projectId = $this->db->insert('projects', $projectData);
+                $this->logger->info('Created new project from invoice', [
+                    'project_id' => $projectId,
+                    'amount' => $amount
+                ]);
+            } else {
+                $projectId = $project['id'];
+
+                // Update project revenue (add to existing revenue)
+                $newTotalRevenue = floatval($project['total_revenue']) + floatval($amount);
+                $this->db->update('projects', [
+                    'total_revenue' => $newTotalRevenue,
+                    'status' => 'booked',
+                    'updated_at' => date('Y-m-d H:i:s')
+                ], ['id' => $projectId]);
+
+                $this->logger->info('Updated project revenue', [
+                    'project_id' => $projectId,
+                    'previous_revenue' => $project['total_revenue'],
+                    'payment_amount' => $amount,
+                    'new_total_revenue' => $newTotalRevenue
+                ]);
+            }
+
+            // Check if this invoice payment was already recorded
+            if ($invoiceId) {
+                $existingRevenue = $this->db->queryOne(
+                    "SELECT id FROM revenue WHERE metadata->>'ghl_invoice_id' = ?",
+                    [$invoiceId]
+                );
+
+                if ($existingRevenue) {
+                    $this->logger->info('Invoice payment already recorded', [
+                        'revenue_id' => $existingRevenue['id'],
+                        'invoice_id' => $invoiceId
+                    ]);
+
+                    // Refresh views and return existing record
+                    $this->refreshViews();
+
+                    return $this->jsonResponse($response, [
+                        'success' => true,
+                        'data' => [
+                            'revenue_id' => $existingRevenue['id'],
+                            'project_id' => $projectId,
+                            'already_recorded' => true
+                        ]
+                    ]);
+                }
             }
 
             // Insert revenue record
             $revenueData = [
-                'project_id' => $project['id'],
-                'client_id' => $client['id'],
+                'project_id' => $projectId,
+                'client_id' => $clientId,
                 'payment_date' => $paymentDate,
                 'amount' => $amount,
                 'payment_method' => $paymentMethod,
-                'payment_type' => $data['category'] ?? $data['payment_type'] ?? 'deposit',
+                'payment_type' => $amount >= $totalAmount ? 'full' : 'deposit',
                 'status' => 'completed',
+                'metadata' => json_encode([
+                    'ghl_invoice_id' => $invoiceId,
+                    'currency' => $data['currency'] ?? 'USD',
+                    'total_invoice_amount' => $totalAmount,
+                    'amount_paid' => $amount
+                ]),
                 'created_at' => date('Y-m-d H:i:s')
             ];
 
             $revenueId = $this->db->insert('revenue', $revenueData);
 
-            $this->logger->info('Recorded revenue payment', [
+            $this->logger->info('Recorded invoice payment', [
                 'revenue_id' => $revenueId,
-                'project_id' => $project['id'],
+                'project_id' => $projectId,
+                'client_id' => $clientId,
+                'invoice_id' => $invoiceId,
                 'amount' => $amount
             ]);
 
@@ -420,13 +533,16 @@ class WebhookController
                 'success' => true,
                 'data' => [
                     'revenue_id' => $revenueId,
-                    'project_id' => $project['id']
+                    'project_id' => $projectId,
+                    'client_id' => $clientId,
+                    'amount' => $amount
                 ]
             ]);
 
         } catch (\Exception $e) {
-            $this->logger->error('Error processing revenue webhook', [
-                'error' => $e->getMessage()
+            $this->logger->error('Error processing invoice payment webhook', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
             ]);
 
             return $this->jsonResponse($response, [
