@@ -201,7 +201,13 @@ $app->get('/api/sync/raw-db-check', function (Request $request, Response $respon
             'inquiries' => $db->queryScalar("SELECT COUNT(*) FROM inquiries"),
             'consultations' => $db->queryScalar("SELECT COUNT(*) FROM consultations"),
             'revenue' => $db->queryScalar("SELECT COUNT(*) FROM revenue")
-        ]
+        ],
+        'materialized_view_data' => [
+            'priority_kpis' => $db->queryOne("SELECT * FROM mv_priority_kpis"),
+            'sales_funnel_sample' => $db->query("SELECT * FROM mv_sales_funnel ORDER BY month DESC LIMIT 3"),
+            'revenue_analytics_sample' => $db->query("SELECT * FROM mv_revenue_analytics ORDER BY month DESC LIMIT 3")
+        ],
+        'projects_sample' => $db->query("SELECT id, project_name, status, total_revenue, booking_date, event_date FROM projects ORDER BY booking_date DESC LIMIT 5")
     ];
 
     $response->getBody()->write(json_encode($data, JSON_PRETTY_PRINT));
