@@ -592,7 +592,9 @@ $app->get('/api/sync/test-invoices', function (Request $request, Response $respo
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($ch, CURLOPT_HTTPHEADER, [
             "Authorization: Bearer {$ghlApiKey}",
-            "Version: 2021-07-28"
+            "Version: 2021-07-28",
+            "Accept: application/json",
+            "Content-Type: application/json"
         ]);
 
         $invoicesResponse = curl_exec($ch);
