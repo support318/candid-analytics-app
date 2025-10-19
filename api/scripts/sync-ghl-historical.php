@@ -305,11 +305,12 @@ do {
             }
 
             // Get event type from custom field 0hj6ZfHbELOE4HwXEI60 or opportunity name
+            // Allowed: wedding, portrait, corporate, event, real-estate, other
             $eventType = 'other';
             if (isset($customFields['0hj6ZfHbELOE4HwXEI60'])) {
                 $fieldValue = strtolower($customFields['0hj6ZfHbELOE4HwXEI60']);
                 if (strpos($fieldValue, 'wedding') !== false) $eventType = 'wedding';
-                elseif (strpos($fieldValue, 'engagement') !== false) $eventType = 'engagement';
+                elseif (strpos($fieldValue, 'engagement') !== false) $eventType = 'portrait'; // Treat engagement as portrait session
                 elseif (strpos($fieldValue, 'portrait') !== false) $eventType = 'portrait';
                 elseif (strpos($fieldValue, 'corporate') !== false) $eventType = 'corporate';
                 elseif (strpos($fieldValue, 'real estate') !== false) $eventType = 'real-estate';
@@ -317,6 +318,7 @@ do {
                 // Fallback to opportunity name
                 $oppName = strtolower($opp['name'] ?? '');
                 if (strpos($oppName, 'wedding') !== false) $eventType = 'wedding';
+                elseif (strpos($oppName, 'engagement') !== false) $eventType = 'portrait';
                 elseif (strpos($oppName, 'portrait') !== false) $eventType = 'portrait';
                 elseif (strpos($oppName, 'event') !== false) $eventType = 'event';
                 elseif (strpos($oppName, 'corporate') !== false) $eventType = 'corporate';
