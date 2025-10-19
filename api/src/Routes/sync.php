@@ -114,3 +114,66 @@ $app->post('/api/sync/create-views', function (Request $request, Response $respo
 
     return $response->withHeader('Content-Type', 'application/json');
 });
+
+/**
+ * Refresh materialized views endpoint
+ * POST /api/sync/refresh-views
+ */
+$app->post('/api/sync/refresh-views', function (Request $request, Response $response) use ($container) {
+    $logger = $container->get('logger');
+    $db = $container->get('db');
+
+    try {
+        $views = [
+            'mv_priority_kpis',
+            'mv_revenue_analytics',
+            'mv_revenue_by_location',
+            'mv_sales_funnel',
+            'mv_lead_source_performance',
+            'mv_operational_efficiency',
+            'mv_staff_productivity',
+            'mv_client_satisfaction',
+            'mv_client_retention',
+            'mv_marketing_performance',
+            'mv_venue_performance',
+            'mv_time_allocation',
+            'mv_seasonal_patterns'
+        ];
+
+        $refreshed = [];
+        $errors = [];
+
+        foreach ($views as $view) {
+            try {
+                $db->execute("REFRESH MATERIALIZED VIEW CONCURRENTLY $view");
+                $refreshed[] = $view;
+                $logger->info("Refreshed materialized view: $view");
+            } catch (\Exception $e) {
+                $errors[$view] = $e->getMessage();
+                $logger->error("Failed to refresh view: $view", ['error' => $e->getMessage()]);
+            }
+        }
+
+        $response->getBody()->write(json_encode([
+            'success' => count($errors) === 0,
+            'refreshed' => $refreshed,
+            'errors' => $errors,
+            'total_views' => count($views),
+            'successful' => count($refreshed)
+        ]));
+
+        return $response->withHeader('Content-Type', 'application/json');
+
+    } catch (\Exception $e) {
+        $logger->error('Failed to refresh materialized views', ['error' => $e->getMessage()]);
+
+        $response->getBody()->write(json_encode([
+            'success' => false,
+            'error' => $e->getMessage()
+        ]));
+
+        return $response
+            ->withStatus(500)
+            ->withHeader('Content-Type', 'application/json');
+    }
+});
