@@ -300,8 +300,11 @@ do {
 
             // Get event date from custom field F9tRB3GmV9ksN3gpOZuz
             $eventDate = null;
-            if (isset($customFields['F9tRB3GmV9ksN3gpOZuz'])) {
-                $eventDate = date('Y-m-d', strtotime($customFields['F9tRB3GmV9ksN3gpOZuz']));
+            if (isset($customFields['F9tRB3GmV9ksN3gpOZuz']) && !empty($customFields['F9tRB3GmV9ksN3gpOZuz'])) {
+                $timestamp = strtotime($customFields['F9tRB3GmV9ksN3gpOZuz']);
+                if ($timestamp !== false) {
+                    $eventDate = date('Y-m-d', $timestamp);
+                }
             }
 
             // Get event type from custom field 0hj6ZfHbELOE4HwXEI60 or opportunity name
