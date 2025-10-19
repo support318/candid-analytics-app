@@ -183,6 +183,24 @@ $app->post('/api/sync/refresh-views', function (Request $request, Response $resp
 });
 
 /**
+ * Check projects detail
+ * GET /api/sync/projects-detail
+ */
+$app->get('/api/sync/projects-detail', function (Request $request, Response $response) use ($container) {
+    $db = $container->get('db');
+
+    $data = [
+        'total' => $db->queryScalar("SELECT COUNT(*) FROM projects"),
+        'by_status' => $db->query("SELECT status, COUNT(*) as count FROM projects GROUP BY status"),
+        'all_projects' => $db->query("SELECT project_name, status, total_revenue, booking_date, event_date, created_at FROM projects ORDER BY created_at DESC"),
+        'clients_with_projects' => $db->query("SELECT c.first_name, c.last_name, c.email, COUNT(p.id) as project_count FROM clients c LEFT JOIN projects p ON c.id = p.client_id GROUP BY c.id, c.first_name, c.last_name, c.email HAVING COUNT(p.id) > 0 ORDER BY project_count DESC")
+    ];
+
+    $response->getBody()->write(json_encode($data, JSON_PRETTY_PRINT));
+    return $response->withHeader('Content-Type', 'application/json');
+});
+
+/**
  * Direct raw database query endpoint
  * GET /api/sync/raw-db-check
  */
