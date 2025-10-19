@@ -192,7 +192,7 @@ $app->get('/api/sync/projects-detail', function (Request $request, Response $res
     $data = [
         'total' => $db->queryScalar("SELECT COUNT(*) FROM projects"),
         'by_status' => $db->query("SELECT status, COUNT(*) as count FROM projects GROUP BY status"),
-        'all_projects' => $db->query("SELECT project_name, status, total_revenue, booking_date, event_date, created_at FROM projects ORDER BY created_at DESC"),
+        'all_projects' => $db->query("SELECT id, project_name, status, total_revenue, booking_date, event_date, created_at FROM projects ORDER BY created_at DESC"),
         'clients_with_projects' => $db->query("SELECT c.first_name, c.last_name, c.email, COUNT(p.id) as project_count FROM clients c LEFT JOIN projects p ON c.id = p.client_id GROUP BY c.id, c.first_name, c.last_name, c.email HAVING COUNT(p.id) > 0 ORDER BY project_count DESC")
     ];
 
