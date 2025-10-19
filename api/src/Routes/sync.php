@@ -613,8 +613,23 @@ $app->get('/api/sync/test-invoices', function (Request $request, Response $respo
         $invoicesHttpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         curl_close($ch);
 
+        // Test 3: Call GHL Transactions API (alternative to invoices)
+        $transactionsUrl = "https://services.leadconnectorhq.com/payments/transactions?locationId={$ghlLocationId}&limit=5";
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, $transactionsUrl);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, [
+            "Authorization: Bearer {$ghlApiKey}",
+            "Version: 2021-07-28",
+            "Accept: application/json"
+        ]);
+        $transactionsResponse = curl_exec($ch);
+        $transactionsHttpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+
         $contactsData = json_decode($contactsResponse, true);
         $invoicesData = json_decode($invoicesResponse, true);
+        $transactionsData = json_decode($transactionsResponse, true);
 
         $data = [
             'success' => true,
@@ -630,7 +645,13 @@ $app->get('/api/sync/test-invoices', function (Request $request, Response $respo
                     'status' => $invoicesHttpCode,
                     'works' => $invoicesHttpCode === 200,
                     'response' => $invoicesData,
-                    'diagnosis' => $invoicesHttpCode === 403 ? 'API key lacks invoices permission OR invoices feature not available in your GHL plan' : null
+                    'diagnosis' => $invoicesHttpCode === 403 ? 'API key lacks invoices permission OR invoices feature not available' : null
+                ],
+                'transactions_api' => [
+                    'status' => $transactionsHttpCode,
+                    'works' => $transactionsHttpCode === 200,
+                    'response' => $transactionsData,
+                    'diagnosis' => $transactionsHttpCode === 200 ? 'SUCCESS! Use this for revenue data instead of invoices' : null
                 ]
             ]
         ];
