@@ -184,7 +184,7 @@ WITH monthly_funnel AS (
         COUNT(*) FILTER (WHERE i.outcome = 'won') as projects_booked,
         COUNT(*) FILTER (WHERE i.outcome = 'lost') as lost_leads,
         COUNT(*) FILTER (WHERE i.status NOT IN ('booked', 'lost', 'abandoned')) as active_leads,
-        AVG(EXTRACT(EPOCH FROM (p.booking_date - i.inquiry_date)) / 86400)::NUMERIC as avg_days_to_booking
+        AVG((p.booking_date - i.inquiry_date))::NUMERIC as avg_days_to_booking
     FROM inquiries i
     LEFT JOIN consultations c ON i.client_id = c.client_id
     LEFT JOIN projects p ON i.client_id = p.client_id
@@ -352,7 +352,7 @@ retention_metrics AS (
         COUNT(*) as total_clients,
         COUNT(*) FILTER (WHERE booking_count > 1) as repeat_clients,
         AVG(booking_count) as avg_bookings_per_client,
-        AVG(EXTRACT(EPOCH FROM (last_booking - first_booking)) / 86400) as avg_client_lifetime_days
+        AVG((last_booking - first_booking)) as avg_client_lifetime_days
     FROM client_booking_counts
 )
 SELECT
