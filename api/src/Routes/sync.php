@@ -491,3 +491,39 @@ $app->get('/api/sync/debug-db-connection', function (Request $request, Response 
     $response->getBody()->write(json_encode($data, JSON_PRETTY_PRINT));
     return $response->withHeader('Content-Type', 'application/json');
 });
+
+/**
+ * Recreate priority KPIs view with GHL-compatible logic
+ * POST /api/sync/recreate-priority-kpis
+ */
+$app->post('/api/sync/recreate-priority-kpis', function (Request $request, Response $response) use ($container) {
+    $db = $container->get('db');
+
+    try {
+        // Read SQL file
+        $sql = file_get_contents(__DIR__ . '/../../database/create_priority_kpis_ghl.sql');
+
+        // Execute SQL
+        $db->getConnection()->exec($sql);
+
+        // Get new KPIs
+        $kpis = $db->queryOne("SELECT * FROM mv_priority_kpis");
+
+        $data = [
+            'success' => true,
+            'message' => 'Priority KPIs view recreated successfully',
+            'kpis' => $kpis
+        ];
+
+        $response->getBody()->write(json_encode($data, JSON_PRETTY_PRINT));
+        return $response->withHeader('Content-Type', 'application/json');
+
+    } catch (\Exception $e) {
+        $data = [
+            'success' => false,
+            'error' => $e->getMessage()
+        ];
+        $response->getBody()->write(json_encode($data, JSON_PRETTY_PRINT));
+        return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
+    }
+});
