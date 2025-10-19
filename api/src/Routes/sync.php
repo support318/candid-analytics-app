@@ -145,17 +145,12 @@ $app->post('/api/sync/refresh-views', function (Request $request, Response $resp
 
         foreach ($views as $view) {
             try {
-                // Try CONCURRENTLY first (non-blocking), fallback to regular refresh
-                try {
-                    $db->execute("REFRESH MATERIALIZED VIEW CONCURRENTLY $view");
-                } catch (\Exception $concurrentError) {
-                    // If concurrent fails (no unique index), do regular refresh
-                    $db->execute("REFRESH MATERIALIZED VIEW $view");
-                }
+                // Use regular refresh (locks view but doesn't require unique index)
+                $db->execute("REFRESH MATERIALIZED VIEW $view");
                 $refreshed[] = $view;
                 $logger->info("Refreshed materialized view: $view");
             } catch (\Exception $e) {
-                // View doesn't exist or other error - skip it
+                // View doesn't exist - skip silently, other errors - log
                 if (strpos($e->getMessage(), 'does not exist') === false) {
                     $errors[$view] = $e->getMessage();
                     $logger->error("Failed to refresh view: $view", ['error' => $e->getMessage()]);
