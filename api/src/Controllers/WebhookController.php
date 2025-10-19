@@ -613,6 +613,148 @@ class WebhookController
     }
 
     /**
+     * Receive consultation/appointment webhook
+     * POST /api/webhooks/consultations
+     *
+     * Expected GHL payload when appointment is created:
+     * - contactId: GHL contact ID
+     * - title: Appointment title/type
+     * - startTime: Appointment start time (ISO format)
+     * - endTime: Appointment end time (ISO format)
+     * - status: Appointment status (scheduled, confirmed, cancelled)
+     * - notes: Appointment notes
+     */
+    public function receiveConsultation(Request $request, Response $response): Response
+    {
+        if (!$this->validateWebhook($request)) {
+            return $this->jsonResponse($response, [
+                'success' => false,
+                'error' => 'Invalid webhook signature'
+            ], 401);
+        }
+
+        $data = $this->parsePayload($request);
+        if (!$data) {
+            return $this->jsonResponse($response, [
+                'success' => false,
+                'error' => 'Invalid payload'
+            ], 400);
+        }
+
+        try {
+            $ghlContactId = $data['contactId'] ?? $data['contact_id'] ?? null;
+
+            if (!$ghlContactId) {
+                return $this->jsonResponse($response, [
+                    'success' => false,
+                    'error' => 'Missing required field: contactId'
+                ], 400);
+            }
+
+            // Find client
+            $client = $this->db->queryOne(
+                "SELECT id FROM clients WHERE ghl_contact_id = ?",
+                [$ghlContactId]
+            );
+
+            if (!$client) {
+                // Create client if doesn't exist
+                $clientData = [
+                    'ghl_contact_id' => $ghlContactId,
+                    'first_name' => $data['contact']['firstName'] ?? 'Unknown',
+                    'last_name' => $data['contact']['lastName'] ?? '',
+                    'email' => $data['contact']['email'] ?? null,
+                    'phone' => $data['contact']['phone'] ?? null,
+                    'status' => 'active',
+                    'lifecycle_stage' => 'lead',
+                    'created_at' => date('Y-m-d H:i:s')
+                ];
+
+                $clientId = $this->db->insert('clients', $clientData);
+
+                $this->logger->info('Created new client from consultation webhook', [
+                    'client_id' => $clientId,
+                    'ghl_contact_id' => $ghlContactId
+                ]);
+            } else {
+                $clientId = $client['id'];
+            }
+
+            // Check if consultation already exists
+            $consultationDate = isset($data['startTime']) ? date('Y-m-d H:i:s', strtotime($data['startTime'])) : date('Y-m-d H:i:s');
+
+            $existingConsultation = $this->db->queryOne(
+                "SELECT id FROM consultations WHERE client_id = ? AND consultation_date = ?",
+                [$clientId, $consultationDate]
+            );
+
+            if ($existingConsultation) {
+                // Update existing consultation
+                $updateData = [
+                    'consultation_type' => $data['title'] ?? 'consultation',
+                    'attended' => in_array(strtolower($data['status'] ?? ''), ['confirmed', 'completed']),
+                    'outcome' => $data['status'] ?? null,
+                    'notes' => $data['notes'] ?? null,
+                    'updated_at' => date('Y-m-d H:i:s')
+                ];
+
+                $this->db->update('consultations', $updateData, ['id' => $existingConsultation['id']]);
+                $consultationId = $existingConsultation['id'];
+
+                $this->logger->info('Updated existing consultation', [
+                    'consultation_id' => $consultationId
+                ]);
+            } else {
+                // Create new consultation
+                $consultationData = [
+                    'client_id' => $clientId,
+                    'consultation_date' => $consultationDate,
+                    'consultation_type' => $data['title'] ?? 'consultation',
+                    'attended' => in_array(strtolower($data['status'] ?? ''), ['confirmed', 'completed']),
+                    'outcome' => $data['status'] ?? null,
+                    'notes' => $data['notes'] ?? null,
+                    'metadata' => json_encode([
+                        'ghl_appointment_id' => $data['id'] ?? null,
+                        'calendar_id' => $data['calendarId'] ?? null,
+                        'end_time' => $data['endTime'] ?? null
+                    ]),
+                    'created_at' => date('Y-m-d H:i:s')
+                ];
+
+                $consultationId = $this->db->insert('consultations', $consultationData);
+
+                $this->logger->info('Created new consultation', [
+                    'consultation_id' => $consultationId,
+                    'client_id' => $clientId,
+                    'type' => $consultationData['consultation_type']
+                ]);
+            }
+
+            // Refresh materialized views
+            $this->refreshViews();
+
+            return $this->jsonResponse($response, [
+                'success' => true,
+                'data' => [
+                    'consultation_id' => $consultationId,
+                    'client_id' => $clientId
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            $this->logger->error('Error processing consultation webhook', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return $this->jsonResponse($response, [
+                'success' => false,
+                'error' => 'Server error processing webhook'
+            ], 500);
+        }
+    }
+
+    /**
      * Refresh materialized views
      */
     private function refreshViews(): void

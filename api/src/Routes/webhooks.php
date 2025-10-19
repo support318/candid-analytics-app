@@ -24,6 +24,12 @@ $app->post('/api/webhooks/inquiries', function (Request $request, Response $resp
     return $controller->receiveInquiry($request, $response);
 });
 
+// Consultations/Appointments webhook
+$app->post('/api/webhooks/consultations', function (Request $request, Response $response) use ($container) {
+    $controller = new WebhookController($container);
+    return $controller->receiveConsultation($request, $response);
+});
+
 // Test webhook endpoint (for debugging)
 $app->post('/api/webhooks/test', function (Request $request, Response $response) use ($container) {
     $logger = $container->get('logger');
