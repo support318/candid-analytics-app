@@ -77,7 +77,7 @@ class AuthController
             [
                 'user_id' => $user['id'],
                 'token' => $refreshToken,
-                'expires_at' => date('Y-m-d H:i:s', time() + intval($_ENV['JWT_REFRESH_EXPIRES_IN']))
+                'expires_at' => date('Y-m-d H:i:s', time() + intval($_ENV['JWT_REFRESH_EXPIRES_IN'] ?? 2592000))
             ]
         );
 
@@ -88,7 +88,7 @@ class AuthController
             'data' => [
                 'access_token' => $accessToken,
                 'refresh_token' => $refreshToken,
-                'expires_in' => intval($_ENV['JWT_EXPIRES_IN']),
+                'expires_in' => intval($_ENV['JWT_EXPIRES_IN'] ?? 3600),
                 'user' => [
                     'id' => $user['id'],
                     'username' => $user['username'],
@@ -153,7 +153,7 @@ class AuthController
             'success' => true,
             'data' => [
                 'access_token' => $accessToken,
-                'expires_in' => intval($_ENV['JWT_EXPIRES_IN'])
+                'expires_in' => intval($_ENV['JWT_EXPIRES_IN'] ?? 3600)
             ]
         ]);
     }
@@ -191,7 +191,7 @@ class AuthController
     private function generateAccessToken(array $user): string
     {
         $issuedAt = time();
-        $expiresAt = $issuedAt + intval($_ENV['JWT_EXPIRES_IN']);
+        $expiresAt = $issuedAt + intval($_ENV['JWT_EXPIRES_IN'] ?? 3600);
 
         $payload = [
             'iat' => $issuedAt,
@@ -202,7 +202,7 @@ class AuthController
             'role' => $user['role']
         ];
 
-        return JWT::encode($payload, $_ENV['JWT_SECRET'], $_ENV['JWT_ALGORITHM']);
+        return JWT::encode($payload, $_ENV['JWT_SECRET'], $_ENV['JWT_ALGORITHM'] ?? 'HS256');
     }
 
     /**
