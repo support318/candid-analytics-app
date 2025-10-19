@@ -536,26 +536,27 @@ $app->get('/api/sync/check-custom-fields', function (Request $request, Response 
     $db = $container->get('db');
 
     try {
-        // Get sample projects with custom_fields
+        // Get sample projects with metadata->custom_fields
         $projects = $db->query("
             SELECT
                 id,
                 project_name,
                 status,
                 total_revenue,
-                custom_fields
+                metadata,
+                metadata->'custom_fields' as custom_fields
             FROM projects
-            WHERE custom_fields IS NOT NULL
-            AND jsonb_typeof(custom_fields) = 'object'
+            WHERE metadata IS NOT NULL
+            AND metadata->'custom_fields' IS NOT NULL
             ORDER BY created_at DESC
             LIMIT 10
         ");
 
-        // Get unique custom field keys
+        // Get unique custom field keys across all projects
         $fieldKeys = $db->query("
-            SELECT DISTINCT jsonb_object_keys(custom_fields) as field_key
+            SELECT DISTINCT jsonb_object_keys(metadata->'custom_fields') as field_key
             FROM projects
-            WHERE custom_fields IS NOT NULL
+            WHERE metadata->'custom_fields' IS NOT NULL
         ");
 
         $data = [
