@@ -13,7 +13,7 @@ $app->get('/api/v1/users/me', function (Request $request, Response $response) {
         $userId = $jwt['sub'];
 
         $stmt = $db->getConnection()->prepare("
-            SELECT id, username, email, full_name, role, created_at, last_login
+            SELECT id, username, email, role, created_at, last_login
             FROM users
             WHERE id = ?
         ");
@@ -125,7 +125,7 @@ $app->get('/api/v1/users', function (Request $request, Response $response) {
         }
 
         $stmt = $db->getConnection()->query("
-            SELECT id, username, email, full_name, role, created_at, last_login, is_active
+            SELECT id, username, email, role, status, created_at, last_login
             FROM users
             ORDER BY created_at DESC
         ");
