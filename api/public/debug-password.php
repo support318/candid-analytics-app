@@ -39,30 +39,30 @@ try {
         exit(1);
     }
 
-    // Test passwords
-    $passwords = [
-        'testpass123',
-        'Admin2025!'
-    ];
+    // Generate new hash and update
+    $newPassword = 'testpass123';
+    $newHash = password_hash($newPassword, PASSWORD_BCRYPT);
 
-    $results = [];
-    foreach ($passwords as $password) {
-        $verifies = password_verify($password, $user['password_hash']);
-        $results[$password] = $verifies;
-    }
+    // Update using prepared statement to avoid escaping issues
+    $updateStmt = $pdo->prepare("UPDATE users SET password_hash = :hash WHERE username = 'admin'");
+    $updateStmt->execute(['hash' => $newHash]);
+
+    // Verify the update
+    $stmt = $pdo->prepare("SELECT password_hash FROM users WHERE username = 'admin'");
+    $stmt->execute();
+    $updatedUser = $stmt->fetch();
+
+    // Test the new password
+    $verifies = password_verify($newPassword, $updatedUser['password_hash']);
 
     // Output results
     echo json_encode([
         'success' => true,
-        'user' => [
-            'id' => $user['id'],
-            'username' => $user['username'],
-            'email' => $user['email'],
-            'two_factor_enabled' => $user['two_factor_enabled'],
-            'password_hash' => $user['password_hash']
-        ],
-        'password_tests' => $results,
-        'notes' => 'If both are false, password needs to be reset'
+        'action' => 'Password reset performed',
+        'new_hash' => $newHash,
+        'stored_hash' => $updatedUser['password_hash'],
+        'password_verification' => $verifies ? 'SUCCESS' : 'FAILED',
+        'notes' => 'Password has been reset to: testpass123'
     ], JSON_PRETTY_PRINT);
 
 } catch (PDOException $e) {

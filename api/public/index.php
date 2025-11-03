@@ -201,25 +201,31 @@ $app->get('/api/debug-password', function (Request $request, Response $response)
             return $response->withHeader('Content-Type', 'application/json')->withStatus(404);
         }
 
-        // Test passwords
-        $passwords = ['testpass123', 'Admin2025!'];
-        $results = [];
-        foreach ($passwords as $password) {
-            $verifies = password_verify($password, $user['password_hash']);
-            $results[$password] = $verifies;
-        }
+        // Generate new password hash
+        $newPassword = 'testpass123';
+        $newHash = password_hash($newPassword, PASSWORD_BCRYPT);
+
+        // Update password using raw query (prepared statements not available in Database wrapper)
+        $db->execute(
+            "UPDATE users SET password_hash = :hash WHERE username = 'admin'",
+            ['hash' => $newHash]
+        );
+
+        // Verify the update
+        $updatedUser = $db->queryOne(
+            "SELECT password_hash FROM users WHERE username = 'admin'"
+        );
+
+        // Test the new password
+        $verifies = password_verify($newPassword, $updatedUser['password_hash']);
 
         $data = [
             "success" => true,
-            "user" => [
-                "id" => $user['id'],
-                "username" => $user['username'],
-                "email" => $user['email'],
-                "two_factor_enabled" => $user['two_factor_enabled'],
-                "password_hash" => $user['password_hash']
-            ],
-            "password_tests" => $results,
-            "notes" => "If both are false, password needs to be reset"
+            "action" => "Password reset performed",
+            "new_hash" => $newHash,
+            "stored_hash" => $updatedUser['password_hash'],
+            "password_verification" => $verifies ? "SUCCESS" : "FAILED",
+            "notes" => "Password has been reset to: testpass123"
         ];
         $response->getBody()->write(json_encode($data, JSON_PRETTY_PRINT));
         return $response->withHeader('Content-Type', 'application/json');
