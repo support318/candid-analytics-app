@@ -116,7 +116,7 @@ $jwtMiddleware = new \Tuupola\Middleware\JwtAuthentication([
     "secret" => $_ENV['JWT_SECRET'],
     "algorithm" => [$_ENV['JWT_ALGORITHM'] ?? 'HS256'],
     "path" => "/api",
-    "ignore" => ["/api/auth/login", "/api/auth/refresh", "/api/health", "/api/webhooks", "/api/setup", "/api/sync", "/api/database", "/api/debug-body"],
+    "ignore" => ["/api/auth/login", "/api/auth/refresh", "/api/health", "/api/webhooks", "/api/setup", "/api/sync", "/api/database", "/api/debug-body", "/api/debug-password"],
     "secure" => false, // Allow HTTP (HTTPS terminated at Cloudflare Tunnel)
     "relaxed" => ["localhost", "127.0.0.1"], // Allow HTTP on localhost
     "header" => "Authorization", // Look for Authorization header
@@ -178,6 +178,60 @@ $app->post('/api/debug-body', function (Request $request, Response $response) {
     ];
     $response->getBody()->write(json_encode($data));
     return $response->withHeader('Content-Type', 'application/json');
+});
+
+// Debug Password (temporary - remove after testing)
+$app->get('/api/debug-password', function (Request $request, Response $response) use ($container) {
+    try {
+        $db = $container->get('db');
+
+        // Query admin user
+        $user = $db->queryOne(
+            "SELECT id, username, email, password_hash, two_factor_enabled
+             FROM users
+             WHERE username = 'admin'"
+        );
+
+        if (!$user) {
+            $data = [
+                "success" => false,
+                "error" => "Admin user not found"
+            ];
+            $response->getBody()->write(json_encode($data));
+            return $response->withHeader('Content-Type', 'application/json')->withStatus(404);
+        }
+
+        // Test passwords
+        $passwords = ['testpass123', 'Admin2025!'];
+        $results = [];
+        foreach ($passwords as $password) {
+            $verifies = password_verify($password, $user['password_hash']);
+            $results[$password] = $verifies;
+        }
+
+        $data = [
+            "success" => true,
+            "user" => [
+                "id" => $user['id'],
+                "username" => $user['username'],
+                "email" => $user['email'],
+                "two_factor_enabled" => $user['two_factor_enabled'],
+                "password_hash" => $user['password_hash']
+            ],
+            "password_tests" => $results,
+            "notes" => "If both are false, password needs to be reset"
+        ];
+        $response->getBody()->write(json_encode($data, JSON_PRETTY_PRINT));
+        return $response->withHeader('Content-Type', 'application/json');
+
+    } catch (\Exception $e) {
+        $data = [
+            "success" => false,
+            "error" => $e->getMessage()
+        ];
+        $response->getBody()->write(json_encode($data));
+        return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
+    }
 });
 
 // Setup Routes (temporary)
