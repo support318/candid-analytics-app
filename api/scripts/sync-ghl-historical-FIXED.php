@@ -1,0 +1,599 @@
+#!/usr/bin/env php
+<?php
+
+/**
+ * FIXED Historical GHL Data Sync Script
+ * Fetches all historical data from GoHighLevel and populates the analytics database
+ *
+ * FIXES:
+ * - Uses correct custom field IDs from GHL_COMPLETE_FIELD_MAPPING.md
+ * - Only creates PROJECTS when pipeline stage = "Planning"
+ * - Creates INQUIRIES for all other leads
+ * - Properly extracts all 11 documented custom fields
+ *
+ * Usage:
+ *   php sync-ghl-historical-FIXED.php [--dry-run] [--start-date=YYYY-MM-DD] [--end-date=YYYY-MM-DD]
+ */
+
+declare(strict_types=1);
+
+// Load dependencies
+require __DIR__ . '/../vendor/autoload.php';
+
+// Load environment variables
+$dotenv = Dotenv\Dotenv::createImmutable(dirname(__DIR__));
+$dotenv->safeLoad();
+
+// Parse CLI arguments
+$dryRun = in_array('--dry-run', $argv);
+$startDate = null;
+$endDate = null;
+
+foreach ($argv as $arg) {
+    if (strpos($arg, '--start-date=') === 0) {
+        $startDate = substr($arg, 13);
+    }
+    if (strpos($arg, '--end-date=') === 0) {
+        $endDate = substr($arg, 11);
+    }
+}
+
+// Configuration
+$ghlApiKey = $_ENV['GHL_API_KEY'] ?? '';
+$ghlLocationId = $_ENV['GHL_LOCATION_ID'] ?? '';
+
+if (empty($ghlApiKey) || empty($ghlLocationId)) {
+    echo "❌ Error: GHL_API_KEY and GHL_LOCATION_ID environment variables are required\n";
+    exit(1);
+}
+
+// Initialize database connection
+try {
+    $db = new \CandidAnalytics\Services\Database(
+        $_ENV['DB_HOST'],
+        $_ENV['DB_PORT'],
+        $_ENV['DB_NAME'],
+        $_ENV['DB_USER'],
+        $_ENV['DB_PASSWORD']
+    );
+    echo "✅ Connected to database\n\n";
+} catch (Exception $e) {
+    echo "❌ Database connection failed: " . $e->getMessage() . "\n";
+    exit(1);
+}
+
+/**
+ * CUSTOM FIELD ID MAPPING
+ * From GHL_COMPLETE_FIELD_MAPPING.md
+ */
+const CUSTOM_FIELD_IDS = [
+    'services' => '00cH1d6lq8m0U8tf3FHg',           // Services Interested In
+    'event_type' => 'AFX1YsPB7QHBP50Ajs1Q',          // Event Type
+    'event_time' => 'Bz6tmEcB0S0pXupkha84',          // Event Start Time
+    'photo_hours' => 'T5nq3eiHUuXM0wFYNNg4',         // Photography Hours
+    'video_hours' => 'nHiHJxfNxRhvUfIu6oD6',         // Videography Hours
+    'drone_services' => 'iQOUEUruaZfPKln4sdKP',      // Drone Services
+    'event_date' => 'kvDBYw8fixMftjWdF51g',          // Event Date
+    'event_location' => 'nstR5hDlCQJ6jpsFzxi7',      // Event Location
+    'contact_name' => 'qpyukeOGutkXczPGJOyK',        // Contact Name
+    'budget' => 'OwkEjGNrbE7Rq0TKBG3M',              // Estimated Budget/Value
+    'notes' => 'xV2dxG35gDY1Vqb00Ql1'                // Project Description/Notes
+];
+
+/**
+ * Extract custom field value from GHL custom fields array
+ */
+function getCustomFieldValue(array $customFieldsArray, string $fieldId): ?string {
+    foreach ($customFieldsArray as $field) {
+        if (($field['id'] ?? null) === $fieldId) {
+            return $field['value'] ?? $field['fieldValue'] ?? $field['fieldValueString'] ?? null;
+        }
+    }
+    return null;
+}
+
+/**
+ * Transform Yes/No to boolean
+ */
+function transformYesNo(?string $value): bool {
+    if ($value === null) return false;
+    return strtolower(trim($value)) === 'yes';
+}
+
+/**
+ * Validate and transform event type
+ */
+function validateEventType(?string $eventType): string {
+    $allowed = ['wedding', 'portrait', 'event', 'corporate', 'real-estate', 'other'];
+    $eventType = strtolower(trim($eventType ?? 'other'));
+
+    // Map common variations
+    if (strpos($eventType, 'wedding') !== false) return 'wedding';
+    if (strpos($eventType, 'engagement') !== false) return 'portrait';
+    if (strpos($eventType, 'portrait') !== false) return 'portrait';
+    if (strpos($eventType, 'corporate') !== false) return 'corporate';
+    if (strpos($eventType, 'real estate') !== false || strpos($eventType, 'real-estate') !== false) return 'real-estate';
+    if (in_array($eventType, $allowed)) return $eventType;
+
+    return 'other';
+}
+
+// Initialize GHL API client
+class GHLClient {
+    private $apiKey;
+    private $locationId;
+    private $baseUrl = 'https://services.leadconnectorhq.com';
+
+    public function __construct(string $apiKey, string $locationId) {
+        $this->apiKey = $apiKey;
+        $this->locationId = $locationId;
+    }
+
+    private function request(string $method, string $endpoint, array $params = []): array {
+        $url = $this->baseUrl . $endpoint;
+
+        if ($method === 'GET' && !empty($params)) {
+            $url .= '?' . http_build_query($params);
+        }
+
+        $ch = curl_init();
+        curl_setopt_array($ch, [
+            CURLOPT_URL => $url,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_HTTPHEADER => [
+                'Authorization: Bearer ' . $this->apiKey,
+                'Version: 2021-07-28',
+                'Accept: application/json'
+            ],
+            CURLOPT_CUSTOMREQUEST => $method
+        ]);
+
+        if ($method === 'POST' && !empty($params)) {
+            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($params));
+            $headers = curl_getopt($ch, CURLOPT_HTTPHEADER) ?? [];
+            $headers[] = 'Content-Type: application/json';
+            curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+        }
+
+        $response = curl_exec($ch);
+        $statusCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+
+        if ($statusCode !== 200 && $statusCode !== 201) {
+            throw new Exception("GHL API request failed: $endpoint (Status: $statusCode) Response: " . substr($response, 0, 200));
+        }
+
+        return json_decode($response, true) ?? [];
+    }
+
+    public function getContacts(int $limit = 100, string $startAfter = ''): array {
+        $params = [
+            'locationId' => $this->locationId,
+            'limit' => $limit
+        ];
+
+        if (!empty($startAfter)) {
+            $params['startAfter'] = $startAfter;
+        }
+
+        return $this->request('GET', '/contacts/', $params);
+    }
+
+    public function getOpportunities(string $pipelineId = '', int $limit = 100, string $startAfter = ''): array {
+        $params = [
+            'location_id' => $this->locationId,
+            'limit' => $limit
+        ];
+
+        if (!empty($pipelineId)) {
+            $params['pipelineId'] = $pipelineId;
+        }
+
+        if (!empty($startAfter)) {
+            $params['startAfterId'] = $startAfter;
+        }
+
+        return $this->request('GET', '/opportunities/search', $params);
+    }
+
+    public function getAppointments(string $startDate, string $endDate): array {
+        $params = [
+            'locationId' => $this->locationId,
+            'startDate' => $startDate,
+            'endDate' => $endDate
+        ];
+
+        return $this->request('GET', '/calendars/events', $params);
+    }
+}
+
+$ghl = new GHLClient($ghlApiKey, $ghlLocationId);
+
+// Statistics
+$stats = [
+    'clients_created' => 0,
+    'clients_updated' => 0,
+    'projects_created' => 0,
+    'inquiries_created' => 0,
+    'consultations_created' => 0,
+    'errors' => []
+];
+
+echo "🚀 Starting FIXED GHL Historical Data Sync\n";
+echo "Mode: " . ($dryRun ? "DRY RUN (no data will be saved)" : "LIVE") . "\n";
+if ($startDate) echo "Start Date: $startDate\n";
+if ($endDate) echo "End Date: $endDate\n";
+echo "=" . str_repeat("=", 60) . "\n\n";
+
+/**
+ * Sync Contacts → Clients
+ */
+echo "📇 Fetching contacts from GHL...\n";
+$contactsProcessed = 0;
+$startAfter = '';
+
+do {
+    try {
+        $response = $ghl->getContacts(100, $startAfter);
+        $contacts = $response['contacts'] ?? [];
+
+        foreach ($contacts as $contact) {
+            $contactsProcessed++;
+            $ghlContactId = $contact['id'];
+
+            // SKIP contacts without email
+            $firstName = $contact['firstName'] ?? $contact['first_name'] ?? '';
+            $email = $contact['email'] ?? null;
+
+            if (empty($email)) {
+                echo "  ⏭️  Skipping incomplete contact: ID {$ghlContactId} (no email)\n";
+                continue;
+            }
+
+            if (empty($firstName)) {
+                $firstName = 'Unknown';
+            }
+
+            // Check if client already exists
+            $existingClient = $db->queryOne(
+                "SELECT id FROM clients WHERE ghl_contact_id = ?",
+                [$ghlContactId]
+            );
+
+            // Prepare tags (PostgreSQL array format)
+            $tags = null;
+            if (!empty($contact['tags'])) {
+                $tagArray = is_array($contact['tags']) ? $contact['tags'] : explode(',', $contact['tags']);
+                $tagArray = array_filter(array_map('trim', $tagArray));
+                if (!empty($tagArray)) {
+                    $tags = '{' . implode(',', array_map(function($tag) {
+                        return '"' . addslashes($tag) . '"';
+                    }, $tagArray)) . '}';
+                }
+            }
+
+            $clientData = [
+                'ghl_contact_id' => $ghlContactId,
+                'first_name' => $firstName,
+                'last_name' => $contact['lastName'] ?? $contact['last_name'] ?? '',
+                'email' => $email,
+                'phone' => $contact['phone'] ?? null,
+                'lead_source' => $contact['source'] ?? 'unknown',
+                'status' => 'active',
+                'lifecycle_stage' => strtolower($contact['type'] ?? 'lead'),
+                'tags' => $tags,
+                'first_inquiry_date' => isset($contact['dateAdded']) ? date('Y-m-d', strtotime($contact['dateAdded'])) : date('Y-m-d'),
+                'created_at' => isset($contact['dateAdded']) ? date('Y-m-d H:i:s', strtotime($contact['dateAdded'])) : date('Y-m-d H:i:s')
+            ];
+
+            if (!$dryRun) {
+                if ($existingClient) {
+                    unset($clientData['created_at']);
+                    $clientData['updated_at'] = date('Y-m-d H:i:s');
+                    $db->update('clients', $clientData, ['id' => $existingClient['id']]);
+                    $stats['clients_updated']++;
+                } else {
+                    $db->insert('clients', $clientData);
+                    $stats['clients_created']++;
+                }
+            } else {
+                echo "  [DRY RUN] Would " . ($existingClient ? "update" : "create") . " client: " . $clientData['first_name'] . " " . $clientData['last_name'] . "\n";
+                $stats['clients_created']++;
+            }
+        }
+
+        $startAfter = $response['meta']['nextPageCursor'] ?? '';
+        echo "  Processed $contactsProcessed contacts...\n";
+
+    } catch (Exception $e) {
+        $stats['errors'][] = "Contact sync error: " . $e->getMessage();
+        echo "  ⚠️  Error: " . $e->getMessage() . "\n";
+        break;
+    }
+} while (!empty($startAfter));
+
+echo "✅ Contacts sync complete: {$stats['clients_created']} created, {$stats['clients_updated']} updated\n\n";
+
+/**
+ * Sync Opportunities → Projects OR Inquiries
+ * CRITICAL: Only create PROJECT if pipeline stage = "Planning"
+ * Otherwise create INQUIRY
+ */
+echo "📊 Fetching opportunities from GHL...\n";
+$opportunitiesProcessed = 0;
+$startAfter = '';
+
+do {
+    try {
+        $response = $ghl->getOpportunities('', 100, $startAfter);
+        $opportunities = $response['opportunities'] ?? [];
+
+        foreach ($opportunities as $opp) {
+            $opportunitiesProcessed++;
+            $ghlContactId = $opp['contact']['id'] ?? null;
+
+            if (!$ghlContactId) {
+                continue;
+            }
+
+            // Find or create client
+            $client = $db->queryOne(
+                "SELECT id FROM clients WHERE ghl_contact_id = ?",
+                [$ghlContactId]
+            );
+
+            if (!$client) {
+                // Create client from opportunity contact data
+                $contactData = $opp['contact'] ?? [];
+                $email = $contactData['email'] ?? null;
+
+                if (!$email) {
+                    echo "  ⚠️  Skipping opportunity (no contact email): {$opp['name']}\n";
+                    continue;
+                }
+
+                $firstName = $contactData['name'] ?? 'Unknown';
+                $nameParts = explode(' ', $firstName, 2);
+                $firstName = $nameParts[0] ?? 'Unknown';
+                $lastName = $nameParts[1] ?? '';
+
+                $clientData = [
+                    'ghl_contact_id' => $ghlContactId,
+                    'first_name' => $firstName,
+                    'last_name' => $lastName,
+                    'email' => $email,
+                    'phone' => $contactData['phone'] ?? null,
+                    'lead_source' => 'opportunity',
+                    'status' => 'active',
+                    'lifecycle_stage' => 'lead', // Default to lead until booked
+                    'first_inquiry_date' => isset($opp['dateAdded']) ? date('Y-m-d', strtotime($opp['dateAdded'])) : date('Y-m-d'),
+                    'created_at' => isset($opp['dateAdded']) ? date('Y-m-d H:i:s', strtotime($opp['dateAdded'])) : date('Y-m-d H:i:s')
+                ];
+
+                if (!$dryRun) {
+                    $db->insert('clients', $clientData);
+                    $stats['clients_created']++;
+                    echo "  ✨ Created client from opportunity: {$firstName} {$lastName}\n";
+                }
+
+                $client = $db->queryOne(
+                    "SELECT id FROM clients WHERE ghl_contact_id = ?",
+                    [$ghlContactId]
+                );
+            }
+
+            // ⭐⭐⭐ CRITICAL: Check if this is a BOOKED project
+            $pipelineStage = $opp['pipelineStage'] ?? $opp['stage'] ?? '';
+            $pipelineStageNormalized = strtolower(trim($pipelineStage));
+
+            $isBooked = ($pipelineStageNormalized === 'planning');
+
+            echo "  📝 Opportunity: {$opp['name']} | Stage: $pipelineStage | Is Booked: " . ($isBooked ? "YES ✅" : "NO ❌") . "\n";
+
+            // Extract custom fields
+            $customFieldsRaw = $opp['customFields'] ?? [];
+            $customFields = [];
+
+            foreach ($customFieldsRaw as $field) {
+                $customFields[$field['id'] ?? ''] = $field['value'] ?? $field['fieldValue'] ?? $field['fieldValueString'] ?? null;
+            }
+
+            // Get values from correct custom field IDs
+            $eventDate = $customFields[CUSTOM_FIELD_IDS['event_date']] ?? null;
+            $eventType = validateEventType($customFields[CUSTOM_FIELD_IDS['event_type']] ?? null);
+            $eventLocation = $customFields[CUSTOM_FIELD_IDS['event_location']] ?? null;
+            $eventTime = $customFields[CUSTOM_FIELD_IDS['event_time']] ?? null;
+            $budget = floatval($customFields[CUSTOM_FIELD_IDS['budget']] ?? $opp['monetaryValue'] ?? 0);
+            $photoHours = floatval($customFields[CUSTOM_FIELD_IDS['photo_hours']] ?? 0);
+            $videoHours = floatval($customFields[CUSTOM_FIELD_IDS['video_hours']] ?? 0);
+            $droneServices = transformYesNo($customFields[CUSTOM_FIELD_IDS['drone_services']] ?? null);
+            $services = $customFields[CUSTOM_FIELD_IDS['services']] ?? null;
+            $contactName = $customFields[CUSTOM_FIELD_IDS['contact_name']] ?? null;
+            $notes = $customFields[CUSTOM_FIELD_IDS['notes']] ?? null;
+
+            // Parse event date
+            if ($eventDate && strtotime($eventDate) !== false) {
+                $eventDate = date('Y-m-d', strtotime($eventDate));
+            } else {
+                $eventDate = null;
+            }
+
+            // Build metadata JSON
+            $metadata = [
+                'ghl_opportunity_id' => $opp['id'],
+                'pipeline_id' => $opp['pipelineId'] ?? null,
+                'pipeline_stage' => $pipelineStage,
+                'stage_id' => $opp['pipelineStageId'] ?? null,
+                'services' => $services,
+                'photo_hours' => $photoHours,
+                'video_hours' => $videoHours,
+                'drone_services' => $droneServices,
+                'event_time' => $eventTime,
+                'contact_name' => $contactName
+            ];
+
+            if ($isBooked) {
+                // ✅ CREATE PROJECT (Booked opportunity)
+                $projectData = [
+                    'client_id' => $client['id'],
+                    'ghl_opportunity_id' => $opp['id'],
+                    'project_name' => $opp['name'] ?? 'Unknown Project',
+                    'booking_date' => isset($opp['dateAdded']) ? date('Y-m-d', strtotime($opp['dateAdded'])) : date('Y-m-d'),
+                    'event_date' => $eventDate ?? date('Y-m-d'),
+                    'event_type' => $eventType,
+                    'venue_address' => $eventLocation,
+                    'status' => 'booked',
+                    'total_revenue' => $budget,
+                    'metadata' => json_encode($metadata),
+                    'notes' => $notes,
+                    'created_at' => isset($opp['dateAdded']) ? date('Y-m-d H:i:s', strtotime($opp['dateAdded'])) : date('Y-m-d H:i:s')
+                ];
+
+                if (!$dryRun) {
+                    // Check if project already exists
+                    $existingProject = $db->queryOne(
+                        "SELECT id FROM projects WHERE ghl_opportunity_id = ?",
+                        [$opp['id']]
+                    );
+
+                    if (!$existingProject) {
+                        $db->insert('projects', $projectData);
+                        $stats['projects_created']++;
+
+                        // Update client lifecycle to 'client'
+                        $db->update('clients', ['lifecycle_stage' => 'client'], ['id' => $client['id']]);
+
+                        echo "    ✅ Created PROJECT: {$projectData['project_name']}\n";
+                    }
+                } else {
+                    echo "    [DRY RUN] Would create PROJECT: " . $projectData['project_name'] . "\n";
+                    $stats['projects_created']++;
+                }
+            } else {
+                // ❌ CREATE INQUIRY (Not booked yet)
+                $inquiryData = [
+                    'client_id' => $client['id'],
+                    'ghl_opportunity_id' => $opp['id'],
+                    'inquiry_date' => isset($opp['dateAdded']) ? date('Y-m-d', strtotime($opp['dateAdded'])) : date('Y-m-d'),
+                    'source' => $opp['source'] ?? 'opportunity',
+                    'event_type' => $eventType,
+                    'event_date' => $eventDate,
+                    'budget' => $budget,
+                    'status' => ($opp['status'] ?? 'open') === 'lost' ? 'lost' : 'new',
+                    'outcome' => $opp['status'] ?? null,
+                    'notes' => $notes,
+                    'metadata' => json_encode($metadata),
+                    'created_at' => isset($opp['dateAdded']) ? date('Y-m-d H:i:s', strtotime($opp['dateAdded'])) : date('Y-m-d H:i:s')
+                ];
+
+                if (!$dryRun) {
+                    // Check if inquiry already exists
+                    $existingInquiry = $db->queryOne(
+                        "SELECT id FROM inquiries WHERE ghl_opportunity_id = ?",
+                        [$opp['id']]
+                    );
+
+                    if (!$existingInquiry) {
+                        $db->insert('inquiries', $inquiryData);
+                        $stats['inquiries_created']++;
+                        echo "    📝 Created INQUIRY: {$opp['name']}\n";
+                    }
+                } else {
+                    echo "    [DRY RUN] Would create INQUIRY: {$opp['name']}\n";
+                    $stats['inquiries_created']++;
+                }
+            }
+        }
+
+        $startAfter = $response['meta']['nextStartAfterId'] ?? '';
+        echo "  Processed $opportunitiesProcessed opportunities...\n";
+
+    } catch (Exception $e) {
+        $stats['errors'][] = "Opportunity sync error: " . $e->getMessage();
+        echo "  ⚠️  Error: " . $e->getMessage() . "\n";
+        break;
+    }
+} while (!empty($startAfter));
+
+echo "✅ Opportunities sync complete: {$stats['projects_created']} projects, {$stats['inquiries_created']} inquiries created\n\n";
+
+/**
+ * Sync Calendar Appointments → Consultations
+ */
+echo "📅 Fetching calendar appointments from GHL...\n";
+try {
+    $appointmentStartDate = $startDate ?? date('Y-m-d', strtotime('-12 months'));
+    $appointmentEndDate = $endDate ?? date('Y-m-d', strtotime('+6 months'));
+
+    $response = $ghl->getAppointments($appointmentStartDate, $appointmentEndDate);
+    $appointments = $response['events'] ?? [];
+
+    foreach ($appointments as $appt) {
+        $ghlContactId = $appt['contactId'] ?? null;
+
+        if (!$ghlContactId) {
+            continue;
+        }
+
+        $client = $db->queryOne(
+            "SELECT id FROM clients WHERE ghl_contact_id = ?",
+            [$ghlContactId]
+        );
+
+        if (!$client) {
+            continue;
+        }
+
+        $consultationData = [
+            'client_id' => $client['id'],
+            'consultation_date' => date('Y-m-d H:i:s', strtotime($appt['startTime'])),
+            'consultation_type' => $appt['title'] ?? 'consultation',
+            'attended' => ($appt['status'] ?? 'scheduled') === 'confirmed',
+            'outcome' => $appt['status'] ?? null,
+            'notes' => $appt['notes'] ?? null,
+            'created_at' => isset($appt['dateAdded']) ? date('Y-m-d H:i:s', strtotime($appt['dateAdded'])) : date('Y-m-d H:i:s')
+        ];
+
+        if (!$dryRun) {
+            $db->insert('consultations', $consultationData);
+            $stats['consultations_created']++;
+        } else {
+            echo "  [DRY RUN] Would create consultation: " . $consultationData['consultation_type'] . "\n";
+            $stats['consultations_created']++;
+        }
+    }
+
+    echo "✅ Appointments sync complete: {$stats['consultations_created']} consultations created\n\n";
+
+} catch (Exception $e) {
+    $stats['errors'][] = "Appointment sync error: " . $e->getMessage();
+    echo "  ⚠️  Error: " . $e->getMessage() . "\n";
+}
+
+/**
+ * Summary
+ */
+echo "\n" . str_repeat("=", 60) . "\n";
+echo "📊 Sync Summary\n";
+echo str_repeat("=", 60) . "\n";
+echo "Clients Created:       {$stats['clients_created']}\n";
+echo "Clients Updated:       {$stats['clients_updated']}\n";
+echo "Projects Created:      {$stats['projects_created']} ⭐ (Booked - Planning stage)\n";
+echo "Inquiries Created:     {$stats['inquiries_created']} 📝 (Leads - Not booked)\n";
+echo "Consultations Created: {$stats['consultations_created']}\n";
+
+if (!empty($stats['errors'])) {
+    echo "\n⚠️  Errors encountered:\n";
+    foreach ($stats['errors'] as $error) {
+        echo "  - $error\n";
+    }
+}
+
+echo "\n" . ($dryRun ? "🔍 DRY RUN COMPLETE - No data was saved" : "✅ SYNC COMPLETE") . "\n";
+echo "\n💡 Next Steps:\n";
+echo "  1. Run: php sync-ghl-historical-FIXED.php --dry-run (to test)\n";
+echo "  2. Review output to verify correct classification\n";
+echo "  3. Run: php sync-ghl-historical-FIXED.php (live import)\n";
+echo "  4. Refresh materialized views: curl -X POST https://analytics.candidstudios.net/api/sync/create-views\n";
+echo "  5. Clear cache: curl -X POST https://analytics.candidstudios.net/api/sync/clear-cache\n";
+echo "\n";

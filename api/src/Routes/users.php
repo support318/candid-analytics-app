@@ -13,7 +13,7 @@ $app->get('/api/v1/users/me', function (Request $request, Response $response) {
         $userId = $jwt['sub'];
 
         $stmt = $db->getConnection()->prepare("
-            SELECT id, username, email, role, created_at, last_login
+            SELECT id, username, email, full_name, role, created_at, last_login, two_factor_enabled
             FROM users
             WHERE id = ?
         ");
@@ -30,6 +30,82 @@ $app->get('/api/v1/users/me', function (Request $request, Response $response) {
         }
 
         $data = ['success' => true, 'data' => $user];
+        $response->getBody()->write(json_encode($data));
+        return $response->withHeader('Content-Type', 'application/json');
+
+    } catch (Exception $e) {
+        $data = [
+            'success' => false,
+            'error' => ['code' => 'SERVER_ERROR', 'message' => $e->getMessage()]
+        ];
+        $response->getBody()->write(json_encode($data));
+        return $response->withStatus(500)->withHeader('Content-Type', 'application/json');
+    }
+});
+
+// Update own profile (email, full_name)
+$app->put('/api/v1/users/me', function (Request $request, Response $response) {
+    $db = $this->get('db');
+    $jwt = $this->get('jwt');
+    $body = $request->getParsedBody();
+
+    try {
+        $userId = $jwt['sub'];
+
+        // Build update query dynamically
+        $updates = [];
+        $params = [];
+
+        if (isset($body['email'])) {
+            // Check if email is already taken by another user
+            $stmt = $db->getConnection()->prepare("SELECT id FROM users WHERE email = ? AND id != ?");
+            $stmt->execute([$body['email'], $userId]);
+            if ($stmt->fetch()) {
+                $data = [
+                    'success' => false,
+                    'error' => ['code' => 'EMAIL_EXISTS', 'message' => 'Email address already in use']
+                ];
+                $response->getBody()->write(json_encode($data));
+                return $response->withStatus(409)->withHeader('Content-Type', 'application/json');
+            }
+            $updates[] = "email = ?";
+            $params[] = $body['email'];
+        }
+
+        if (isset($body['full_name'])) {
+            $updates[] = "full_name = ?";
+            $params[] = $body['full_name'];
+        }
+
+        if (empty($updates)) {
+            $data = [
+                'success' => false,
+                'error' => ['code' => 'NO_UPDATES', 'message' => 'No fields to update']
+            ];
+            $response->getBody()->write(json_encode($data));
+            return $response->withStatus(400)->withHeader('Content-Type', 'application/json');
+        }
+
+        $updates[] = "updated_at = NOW()";
+        $params[] = $userId;
+
+        $sql = "UPDATE users SET " . implode(", ", $updates) . " WHERE id = ?";
+        $stmt = $db->getConnection()->prepare($sql);
+        $stmt->execute($params);
+
+        // Return updated user info
+        $stmt = $db->getConnection()->prepare("
+            SELECT id, username, email, full_name, role, created_at, last_login, two_factor_enabled
+            FROM users
+            WHERE id = ?
+        ");
+        $stmt->execute([$userId]);
+        $user = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        $data = [
+            'success' => true,
+            'data' => $user
+        ];
         $response->getBody()->write(json_encode($data));
         return $response->withHeader('Content-Type', 'application/json');
 

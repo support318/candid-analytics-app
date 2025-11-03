@@ -116,7 +116,7 @@ $jwtMiddleware = new \Tuupola\Middleware\JwtAuthentication([
     "secret" => $_ENV['JWT_SECRET'],
     "algorithm" => [$_ENV['JWT_ALGORITHM'] ?? 'HS256'],
     "path" => "/api",
-    "ignore" => ["/api/auth/login", "/api/auth/refresh", "/api/health", "/api/webhooks", "/api/setup", "/api/sync"],
+    "ignore" => ["/api/auth/login", "/api/auth/refresh", "/api/health", "/api/webhooks", "/api/setup", "/api/sync", "/api/database"],
     "secure" => false, // Allow HTTP (HTTPS terminated at Cloudflare Tunnel)
     "relaxed" => ["localhost", "127.0.0.1"], // Allow HTTP on localhost
     "header" => "Authorization", // Look for Authorization header
@@ -164,11 +164,20 @@ $app->get('/api/health', function (Request $request, Response $response) {
 // Setup Routes (temporary)
 require __DIR__ . '/../src/Routes/setup.php';
 
+// Database check route (temporary)
+require __DIR__ . '/../src/Routes/database-check.php';
+
 // Authentication Routes
 require __DIR__ . '/../src/Routes/auth.php';
 
 // User Management Routes
 require __DIR__ . '/../src/Routes/users.php';
+
+// Two-Factor Authentication Routes
+require __DIR__ . '/../src/Routes/two-factor.php';
+
+// Admin Migration Routes (temporary)
+require __DIR__ . '/../src/Routes/migration.php';
 
 // KPI Routes
 require __DIR__ . '/../src/Routes/kpis.php';

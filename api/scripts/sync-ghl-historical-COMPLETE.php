@@ -47,26 +47,40 @@ foreach ($argv as $arg) {
     }
 }
 
-// Configuration
-$ghlApiKey = $_ENV['GHL_API_KEY'] ?? '';
-$ghlLocationId = $_ENV['GHL_LOCATION_ID'] ?? '';
-$ghlApiBaseUrl = $_ENV['GHL_API_BASE_URL'] ?? 'https://services.leadconnectorhq.com';
-$ghlApiVersion = $_ENV['GHL_API_VERSION'] ?? '2021-07-28';
+// Configuration - use getenv() for Railway compatibility, fall back to $_ENV for local .env
+$ghlApiKey = getenv('GHL_API_KEY') ?: ($_ENV['GHL_API_KEY'] ?? '');
+$ghlLocationId = getenv('GHL_LOCATION_ID') ?: ($_ENV['GHL_LOCATION_ID'] ?? '');
+$ghlApiBaseUrl = getenv('GHL_API_BASE_URL') ?: ($_ENV['GHL_API_BASE_URL'] ?? 'https://services.leadconnectorhq.com');
+$ghlApiVersion = getenv('GHL_API_VERSION') ?: ($_ENV['GHL_API_VERSION'] ?? '2021-07-28');
 
 if (empty($ghlApiKey) || empty($ghlLocationId)) {
     echo "❌ Error: GHL_API_KEY and GHL_LOCATION_ID environment variables are required\n";
     exit(1);
 }
 
-// Initialize database connection
+// Initialize database connection - use getenv() for Railway compatibility
 try {
-    $db = new \CandidAnalytics\Services\Database(
-        $_ENV['DB_HOST'],
-        $_ENV['DB_PORT'],
-        $_ENV['DB_NAME'],
-        $_ENV['DB_USER'],
-        $_ENV['DB_PASSWORD']
-    );
+    // Check for Railway's DATABASE_URL first (takes precedence)
+    $databaseUrl = getenv('DATABASE_URL') ?: ($_ENV['DATABASE_URL'] ?? null);
+
+    if ($databaseUrl) {
+        // Parse DATABASE_URL (format: postgresql://user:password@host:port/database)
+        $parsed = parse_url($databaseUrl);
+        $dbHost = $parsed['host'] ?? 'localhost';
+        $dbPort = (string)($parsed['port'] ?? '5432');
+        $dbName = ltrim($parsed['path'] ?? '/candid_analytics', '/');
+        $dbUser = $parsed['user'] ?? 'candid_analytics_user';
+        $dbPassword = $parsed['pass'] ?? '';
+    } else {
+        // Fall back to individual environment variables
+        $dbHost = getenv('DB_HOST') ?: ($_ENV['DB_HOST'] ?? 'localhost');
+        $dbPort = getenv('DB_PORT') ?: ($_ENV['DB_PORT'] ?? '5432');
+        $dbName = getenv('DB_NAME') ?: ($_ENV['DB_NAME'] ?? 'candid_analytics');
+        $dbUser = getenv('DB_USER') ?: ($_ENV['DB_USER'] ?? 'candid_analytics_user');
+        $dbPassword = getenv('DB_PASSWORD') ?: ($_ENV['DB_PASSWORD'] ?? '');
+    }
+
+    $db = new \CandidAnalytics\Services\Database($dbHost, $dbPort, $dbName, $dbUser, $dbPassword);
     echo "✅ Connected to database\n\n";
 } catch (Exception $e) {
     echo "❌ Database connection failed: " . $e->getMessage() . "\n";
@@ -172,16 +186,54 @@ const MARKETING_FIELDS = [
  */
 
 /**
+ * Convert PHP array to PostgreSQL array format
+ */
+function phpArrayToPostgresArray(?array $arr): ?string {
+    if (empty($arr)) {
+        return null;
+    }
+    // PostgreSQL array format: {"value1","value2","value3"}
+    $escaped = array_map(function($val) {
+        // Escape double quotes and backslashes
+        return '"' . str_replace(['"', '\\'], ['\"', '\\\\'], (string)$val) . '"';
+    }, $arr);
+    return '{' . implode(',', $escaped) . '}';
+}
+
+/**
+ * Map GHL opportunity status to database inquiry status
+ */
+function mapInquiryStatus(?string $ghlStatus): string {
+    $statusMap = [
+        'open' => 'new',
+        'new' => 'new',
+        'contacted' => 'contacted',
+        'qualified' => 'qualified',
+        'won' => 'booked',
+        'lost' => 'lost',
+        'abandoned' => 'lost'
+    ];
+
+    $normalized = strtolower(trim($ghlStatus ?? ''));
+    return $statusMap[$normalized] ?? 'new';
+}
+
+/**
  * Extract custom field value from GHL custom fields array
  */
 function getCustomFieldValue(array $customFieldsArray, string $fieldId): ?string {
     foreach ($customFieldsArray as $field) {
         if (($field['id'] ?? null) === $fieldId) {
-            $value = $field['value'] ?? $field['fieldValue'] ?? $field['fieldValueString'] ?? null;
+            $value = $field['value'] ?? $field['fieldValue'] ?? $field['fieldValueString'] ?? $field['fieldValueNumber'] ?? null;
 
             // Handle array values (CHECKBOX fields)
             if (is_array($value)) {
                 return json_encode($value);
+            }
+
+            // Convert numeric values to string to match return type
+            if (is_numeric($value)) {
+                return (string)$value;
             }
 
             return $value;
@@ -308,17 +360,26 @@ function fetchOpportunities(string $apiKey, string $locationId, string $baseUrl,
 
     do {
         $pageCount++;
-        $url = "$baseUrl/opportunities/search?locationId=$locationId&limit=100";
+        $url = "$baseUrl/opportunities/search";
+
+        // Build POST body for search endpoint
+        $body = [
+            'locationId' => $locationId,
+            'limit' => 100
+        ];
         if ($nextCursor) {
-            $url .= "&startAfterId=$nextCursor";
+            $body['startAfterId'] = $nextCursor;
         }
 
         $ch = curl_init($url);
         curl_setopt_array($ch, [
             CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_POST => true,
+            CURLOPT_POSTFIELDS => json_encode($body),
             CURLOPT_HTTPHEADER => [
                 "Authorization: Bearer $apiKey",
                 "Version: $version",
+                "Content-Type: application/json",
                 "Accept: application/json"
             ]
         ]);
@@ -327,7 +388,7 @@ function fetchOpportunities(string $apiKey, string $locationId, string $baseUrl,
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         curl_close($ch);
 
-        if ($httpCode !== 200) {
+        if ($httpCode !== 200 && $httpCode !== 201) {
             echo "❌ Error fetching opportunities (page $pageCount): HTTP $httpCode\n";
             echo "Response: $response\n";
             break;
@@ -418,7 +479,7 @@ foreach ($opportunities as $opp) {
             'phone' => $contact['phone'] ?? null,
             'lead_source' => $contact['source'] ?? null,
             'lifecycle_stage' => $contact['type'] ?? 'lead',
-            'tags' => !empty($contact['tags']) ? json_encode($contact['tags']) : null,
+            'tags' => phpArrayToPostgresArray($contact['tags'] ?? null),
             'first_inquiry_date' => transformDate($contact['dateAdded'] ?? null),
 
             // NEW FIELDS FROM GHL DISCOVERY
@@ -432,7 +493,10 @@ foreach ($opportunities as $opp) {
 
         if (!$dryRun) {
             // Check if client exists
-            $existingClient = $db->selectOne('clients', ['ghl_contact_id' => $contact['id']]);
+            $existingClient = $db->queryOne(
+                'SELECT * FROM clients WHERE ghl_contact_id = :ghl_contact_id',
+                ['ghl_contact_id' => $contact['id']]
+            );
 
             if ($existingClient) {
                 $db->update('clients', $clientData, ['id' => $existingClient['id']]);
@@ -614,7 +678,7 @@ foreach ($opportunities as $opp) {
                 'event_type' => getFieldWithFallback($customFields, PROJECT_CORE_FIELDS['event_type'], PROJECT_CORE_FIELDS['event_type_alt']),
                 'event_date' => transformDate(getFieldWithFallback($customFields, PROJECT_CORE_FIELDS['event_date'], PROJECT_CORE_FIELDS['event_date_alt'])),
                 'budget' => transformDecimal(getCustomFieldValue($customFields, FINANCIAL_FIELDS['opportunity_value'])),
-                'status' => strtolower($opp['status'] ?? 'new'),
+                'status' => mapInquiryStatus($opp['status']),
                 'notes' => getFieldWithFallback($customFields, PROJECT_CORE_FIELDS['notes'], PROJECT_CORE_FIELDS['notes_alt'])
             ];
 

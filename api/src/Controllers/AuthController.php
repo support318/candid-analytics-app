@@ -33,6 +33,7 @@ class AuthController
         $data = $request->getParsedBody();
         $username = $data['username'] ?? '';
         $password = $data['password'] ?? '';
+        $twoFactorCode = $data['two_factor_code'] ?? null;
 
         // Validate input
         if (empty($username) || empty($password)) {
@@ -45,9 +46,9 @@ class AuthController
             ], 400);
         }
 
-        // Query user from database
+        // Query user from database (include 2FA fields)
         $user = $this->db->queryOne(
-            "SELECT id, username, email, password_hash, role
+            "SELECT id, username, email, password_hash, role, two_factor_enabled
              FROM users
              WHERE username = :username AND status = 'active'",
             ['username' => $username]
@@ -64,6 +65,41 @@ class AuthController
                     'message' => 'Invalid username or password'
                 ]
             ], 401);
+        }
+
+        // Check if 2FA is enabled
+        if ($user['two_factor_enabled']) {
+            // If 2FA code not provided, request it
+            if (empty($twoFactorCode)) {
+                return $this->jsonResponse($response, [
+                    'success' => false,
+                    'error' => [
+                        'code' => '2FA_REQUIRED',
+                        'message' => 'Two-factor authentication code required'
+                    ],
+                    'data' => [
+                        'two_factor_required' => true
+                    ]
+                ], 401);
+            }
+
+            // Verify 2FA code
+            if (!TwoFactorController::verifyLoginCode($this->db, $user['id'], $twoFactorCode)) {
+                $this->logger->warning('Failed 2FA verification', [
+                    'username' => $username,
+                    'user_id' => $user['id']
+                ]);
+
+                return $this->jsonResponse($response, [
+                    'success' => false,
+                    'error' => [
+                        'code' => 'INVALID_2FA_CODE',
+                        'message' => 'Invalid two-factor authentication code'
+                    ]
+                ], 401);
+            }
+
+            $this->logger->info('2FA verification successful', ['user_id' => $user['id']]);
         }
 
         // Generate JWT tokens
