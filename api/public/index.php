@@ -161,6 +161,25 @@ $app->get('/api/health', function (Request $request, Response $response) {
     return $response->withHeader('Content-Type', 'application/json');
 });
 
+// Debug Body Parsing (temporary - remove after testing)
+$app->post('/api/debug-body', function (Request $request, Response $response) {
+    $parsedBody = $request->getParsedBody();
+    $rawBody = (string)$request->getBody();
+    $contentType = $request->getHeaderLine('Content-Type');
+
+    $data = [
+        "success" => true,
+        "data" => [
+            "parsed_body" => $parsedBody,
+            "raw_body" => $rawBody,
+            "content_type" => $contentType,
+            "parsed_body_type" => gettype($parsedBody)
+        ]
+    ];
+    $response->getBody()->write(json_encode($data));
+    return $response->withHeader('Content-Type', 'application/json');
+});
+
 // Setup Routes (temporary)
 require __DIR__ . '/../src/Routes/setup.php';
 
