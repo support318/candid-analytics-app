@@ -116,7 +116,7 @@ $jwtMiddleware = new \Tuupola\Middleware\JwtAuthentication([
     "secret" => $_ENV['JWT_SECRET'],
     "algorithm" => [$_ENV['JWT_ALGORITHM'] ?? 'HS256'],
     "path" => "/api",
-    "ignore" => ["/api/auth/login", "/api/auth/refresh", "/api/health", "/api/webhooks", "/api/setup", "/api/sync", "/api/database"],
+    "ignore" => ["/api/auth/login", "/api/auth/refresh", "/api/health", "/api/webhooks", "/api/setup", "/api/sync", "/api/database", "/api/emergency-migrate"],
     "secure" => false, // Allow HTTP (HTTPS terminated at Cloudflare Tunnel)
     "relaxed" => ["localhost", "127.0.0.1"], // Allow HTTP on localhost
     "header" => "Authorization", // Look for Authorization header
@@ -178,6 +178,9 @@ require __DIR__ . '/../src/Routes/two-factor.php';
 
 // Admin Migration Routes (temporary)
 require __DIR__ . '/../src/Routes/migration.php';
+
+// Emergency Migration Route (TEMPORARY - DELETE AFTER USE)
+(require __DIR__ . '/../src/Routes/emergency-migrate.php')($app);
 
 // KPI Routes
 require __DIR__ . '/../src/Routes/kpis.php';
