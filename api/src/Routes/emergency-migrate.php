@@ -13,9 +13,9 @@ return function (App $app) {
      * This endpoint runs the 2FA migration without authentication.
      * DELETE THIS FILE after migration is complete for security.
      *
-     * POST /api/emergency-migrate
+     * POST /emergency-migrate (outside /api scope to avoid JWT middleware)
      */
-    $app->post('/api/emergency-migrate', function (Request $request, Response $response) use ($container) {
+    $app->post('/emergency-migrate', function (Request $request, Response $response) use ($container) {
         try {
             $db = $container->get('db');
 

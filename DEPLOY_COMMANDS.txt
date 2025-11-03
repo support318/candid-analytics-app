@@ -1,0 +1,170 @@
+================================================================================
+CANDID ANALYTICS - DEPLOYMENT COMMANDS QUICK REFERENCE
+================================================================================
+Date: 2025-11-02
+Project: /Users/ryanmayiras/Projects/candid-analytics-app
+New GHL API Key: pit-db1970e0-70d8-4d85-80f0-f04a4ba1cb8b
+================================================================================
+
+AUTOMATED DEPLOYMENT (RECOMMENDED)
+-----------------------------------
+cd /Users/ryanmayiras/Projects/candid-analytics-app
+./deploy-to-railway.sh
+
+================================================================================
+
+MANUAL DEPLOYMENT COMMANDS
+-----------------------------------
+
+1. LINK RAILWAY PROJECT
+------------------------
+railway link
+# Select: Candid Projects → candid-analytics-app → production
+
+2. APPLY DATABASE MIGRATION
+----------------------------
+railway run psql $DATABASE_URL < database/03-ghl-field-enhancements.sql
+
+3. VERIFY MIGRATION
+-------------------
+railway run psql $DATABASE_URL -c "SELECT column_name FROM information_schema.columns WHERE table_name='projects' AND column_name IN ('ghl_opportunity_id', 'discount_type', 'has_video');"
+# Expected: 3 rows
+
+4. UPDATE ENVIRONMENT VARIABLES
+--------------------------------
+railway variables set GHL_API_KEY=pit-db1970e0-70d8-4d85-80f0-f04a4ba1cb8b
+railway variables set GHL_LOCATION_ID=GHJ0X5n0UomysnUPNfao
+railway variables set GHL_API_BASE_URL=https://services.leadconnectorhq.com
+railway variables set GHL_API_VERSION=2021-07-28
+
+5. VERIFY VARIABLES
+-------------------
+railway variables | grep GHL
+
+6. RESTART SERVICES
+-------------------
+railway up
+
+7. TEST IMPORT (DRY-RUN)
+------------------------
+php api/scripts/sync-ghl-historical-COMPLETE.php --dry-run
+
+8. RUN FULL IMPORT
+------------------
+php api/scripts/sync-ghl-historical-COMPLETE.php
+
+9. VERIFY DATA
+--------------
+railway run psql $DATABASE_URL
+
+Then run:
+SELECT
+    (SELECT COUNT(*) FROM clients) as clients,
+    (SELECT COUNT(*) FROM projects) as projects,
+    (SELECT COUNT(*) FROM inquiries) as inquiries,
+    (SELECT COUNT(*) FROM staff_assignments) as staff;
+
+\q
+
+10. TEST DASHBOARD
+------------------
+open https://analytics.candidstudios.net
+
+================================================================================
+
+TROUBLESHOOTING COMMANDS
+-----------------------------------
+
+# Check Railway status
+railway status
+
+# Check database connection
+railway run psql $DATABASE_URL -c "SELECT version();"
+
+# List all tables
+railway run psql $DATABASE_URL -c "\dt"
+
+# Describe projects table
+railway run psql $DATABASE_URL -c "\d projects"
+
+# Check GHL API connection
+curl -H "Authorization: Bearer pit-db1970e0-70d8-4d85-80f0-f04a4ba1cb8b" \
+     -H "Version: 2021-07-28" \
+     "https://services.leadconnectorhq.com/locations/GHJ0X5n0UomysnUPNfao"
+
+# View Railway logs
+railway logs
+
+# Restart specific service
+railway up --service api
+
+================================================================================
+
+WHAT GETS DEPLOYED
+-----------------------------------
+Database:  22 new columns (projects, clients, deliverables, reviews, staff_assignments)
+Script:    Uses ALL 57 analytics-relevant GHL custom fields
+Logic:     Planning stage = PROJECT, others = INQUIRY
+Tables:    Populates clients, projects, inquiries, staff_assignments, deliverables, reviews
+
+================================================================================
+
+SUCCESS CHECKLIST
+-----------------------------------
+[ ] Railway project linked
+[ ] Database migration applied (22 columns)
+[ ] Migration verified (3 sample columns found)
+[ ] Environment variables updated (4 GHL variables)
+[ ] Variables verified (GHL_API_KEY present)
+[ ] Services restarted
+[ ] Dry-run test successful (BOOKED PROJECT classification correct)
+[ ] Full import completed (0 errors)
+[ ] Data verified (counts look reasonable)
+[ ] Dashboard loads (https://analytics.candidstudios.net)
+[ ] KPIs displaying correctly
+
+================================================================================
+
+QUICK ANSWERS
+-----------------------------------
+Q: How long will this take?
+A: 10-15 minutes automated, 20-30 minutes manual
+
+Q: What if migration fails?
+A: "column already exists" = safe to ignore (uses IF NOT EXISTS)
+
+Q: What if import creates 0 projects?
+A: Check dry-run output - verify "BOOKED PROJECT" appears for Planning stage
+
+Q: What if I get 401 Unauthorized?
+A: Verify GHL_API_KEY = pit-db1970e0-70d8-4d85-80f0-f04a4ba1cb8b
+
+Q: Can I run import again?
+A: Yes - script has duplicate detection (upserts clients/projects)
+
+================================================================================
+
+FILES CREATED
+-----------------------------------
+✅ database/03-ghl-field-enhancements.sql - Database migration
+✅ api/scripts/sync-ghl-historical-COMPLETE.php - Import script
+✅ api/.env - Local env (GHL key updated)
+✅ deploy-to-railway.sh - Automated deployment script
+✅ DEPLOY_NOW.md - Deployment guide
+✅ QUICK_START_GUIDE.md - 8-step checklist
+✅ DEPLOYMENT_READY.md - Complete summary
+✅ DEPLOY_COMMANDS.txt - This file
+
+================================================================================
+
+NEXT AFTER DEPLOYMENT
+-----------------------------------
+1. Build n8n webhook for real-time contact sync
+2. Build n8n workflow for opportunity updates
+3. Build n8n workflow for staff assignment tracking
+4. Set up daily scheduled sync (backup/failsafe)
+
+================================================================================
+Last Updated: 2025-11-02
+Keep this file open during deployment!
+================================================================================
