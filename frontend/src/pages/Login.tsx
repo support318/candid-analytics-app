@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import {
   Box,
   Button,
@@ -16,11 +16,25 @@ import candidLogo from '../assets/candid-logo.png'
 const Login = () => {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
+  const [twoFactorCode, setTwoFactorCode] = useState('')
+  const [requires2FA, setRequires2FA] = useState(false)
   const { login, isLoggingIn, loginError } = useAuth()
+
+  // Check if 2FA is required based on login error
+  useEffect(() => {
+    if (loginError && loginError.includes('Two-factor authentication code required')) {
+      setRequires2FA(true)
+    }
+  }, [loginError])
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    login({ username, password })
+
+    const credentials = requires2FA
+      ? { username, password, two_factor_code: twoFactorCode }
+      : { username, password }
+
+    login(credentials)
   }
 
   return (
@@ -82,16 +96,40 @@ const Login = () => {
                 margin="normal"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                disabled={isLoggingIn}
+                disabled={isLoggingIn || requires2FA}
                 required
               />
+
+              {requires2FA && (
+                <>
+                  <Alert severity="info" sx={{ mt: 2, mb: 2 }}>
+                    Two-factor authentication is enabled for this account. Please enter your 6-digit code from your authenticator app.
+                  </Alert>
+                  <TextField
+                    fullWidth
+                    label="6-Digit Authentication Code"
+                    variant="outlined"
+                    margin="normal"
+                    value={twoFactorCode}
+                    onChange={(e) => setTwoFactorCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                    disabled={isLoggingIn}
+                    required
+                    autoFocus
+                    inputProps={{
+                      maxLength: 6,
+                      style: { fontSize: '24px', letterSpacing: '8px', textAlign: 'center' }
+                    }}
+                    helperText="Enter the code from your authenticator app"
+                  />
+                </>
+              )}
 
               <Button
                 fullWidth
                 type="submit"
                 variant="contained"
                 size="large"
-                disabled={isLoggingIn}
+                disabled={isLoggingIn || (requires2FA && twoFactorCode.length !== 6)}
                 sx={{ mt: 3, mb: 2, py: 1.5 }}
               >
                 {isLoggingIn ? (

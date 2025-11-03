@@ -9,6 +9,7 @@ export interface User {
 export interface LoginCredentials {
   username: string
   password: string
+  two_factor_code?: string
 }
 
 export interface AuthResponse {

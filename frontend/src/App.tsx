@@ -12,6 +12,7 @@ import StaffPage from './pages/StaffPage'
 import AIInsightsPage from './pages/AIInsightsPage'
 import Profile from './pages/Profile'
 import Users from './pages/Users'
+import TwoFactorSetup from './pages/TwoFactorSetup'
 
 // Protected Route Component
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
@@ -61,6 +62,16 @@ function App() {
         <Route path="profile" element={<Profile />} />
         <Route path="users" element={<Users />} />
       </Route>
+
+      {/* Two-Factor Authentication Setup (Protected, but outside dashboard layout) */}
+      <Route
+        path="/two-factor-setup"
+        element={
+          <ProtectedRoute>
+            <TwoFactorSetup />
+          </ProtectedRoute>
+        }
+      />
 
       {/* Root redirect */}
       <Route path="/" element={<Navigate to="/dashboard" replace />} />
