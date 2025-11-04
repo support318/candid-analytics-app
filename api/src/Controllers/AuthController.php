@@ -54,22 +54,6 @@ class AuthController
             ['username' => $username]
         );
 
-        // DEBUG: Log user lookup result
-        if (!$user) {
-            $this->logger->error('Login failed - user not found', ['username' => $username]);
-        } else {
-            $hash_preview = substr($user['password_hash'], 0, 20);
-            $hash_length = strlen($user['password_hash']);
-            $verify_result = password_verify($password, $user['password_hash']);
-            $this->logger->info('Login attempt details', [
-                'username' => $username,
-                'user_found' => true,
-                'hash_preview' => $hash_preview,
-                'hash_length' => $hash_length,
-                'verify_result' => $verify_result
-            ]);
-        }
-
         // Verify user exists and password is correct
         if (!$user || !password_verify($password, $user['password_hash'])) {
             $this->logger->warning('Failed login attempt', ['username' => $username]);
