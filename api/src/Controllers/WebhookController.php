@@ -377,7 +377,8 @@ class WebhookController
 
             return $this->jsonResponse($response, [
                 'success' => false,
-                'error' => 'Server error processing webhook'
+                'error' => 'Server error processing webhook',
+                'debug' => $e->getMessage()
             ], 500);
         }
     }
