@@ -109,24 +109,24 @@ class WebhookController
         }
     }
 
+    // Pipeline ID constants
+    private const PLANNING_PIPELINE_ID = 'L2s9gNWdWzCbutNTC4DE';
+    private const BOOKED_STAGE_ID = 'bad101e4-ff48-4ab8-845a-1660f0c0c7da';
+
     /**
      * Receive project/booking webhook
      * POST /api/webhooks/projects
      *
-     * Expected GHL payload when contact moves to "customer" or opportunity status changes to "booked":
-     * - id: GHL contact ID
+     * CRITICAL: Only create projects when opportunity is in PLANNING pipeline!
+     *
+     * Expected payload from n8n/GHL webhook:
+     * - id or contact_id: GHL contact ID
+     * - opportunity_id: GHL opportunity ID
+     * - pipeline_id: Must be L2s9gNWdWzCbutNTC4DE (PLANNING) for booking
+     * - stage_id: Stage within the pipeline
+     * - stage_name: Human-readable stage name
      * - firstName, lastName, email, phone: Standard fields
-     * - customField[AFX1YsPB7QHBP50Ajs1Q]: Event Type
-     * - customField[kvDBYw8fixMftjWdF51g]: Event Date
-     * - customField[OwkEjGNrbE7Rq0TKBG3M]: Total Value/Budget
-     * - customField[nstR5hDlCQJ6jpsFzxi7]: Venue Address
-     * - customField[00cH1d6lq8m0U8tf3FHg]: Services (array)
-     * - customField[T5nq3eiHUuXM0wFYNNg4]: Photography Hours
-     * - customField[nHiHJxfNxRhvUfIu6oD6]: Videography Hours
-     * - customField[iQOUEUruaZfPKln4sdKP]: Drone Services
-     * - customField[Bz6tmEcB0S0pXupkha84]: Event Start Time
-     * - customField[qpyukeOGutkXczPGJOyK]: Contact Name
-     * - customField[xV2dxG35gDY1Vqb00Ql1]: Project Notes
+     * - customField[...]: Custom field values
      */
     public function receiveProject(Request $request, Response $response): Response
     {
@@ -148,6 +148,26 @@ class WebhookController
         try {
             // Extract GHL data
             $ghlContactId = $data['id'] ?? $data['contact_id'] ?? null;
+            $ghlOpportunityId = $data['opportunity_id'] ?? null;
+            $pipelineId = $data['pipeline_id'] ?? $data['pipelineId'] ?? null;
+            $stageId = $data['stage_id'] ?? $data['stageId'] ?? null;
+            $stageName = $data['stage_name'] ?? $data['stageName'] ?? null;
+
+            // CRITICAL: Validate this is a PLANNING pipeline opportunity
+            // Only contacts in PLANNING pipeline with signed agreement should become projects
+            if ($pipelineId && $pipelineId !== self::PLANNING_PIPELINE_ID) {
+                $this->logger->info('Ignoring project webhook - not in PLANNING pipeline', [
+                    'pipeline_id' => $pipelineId,
+                    'expected_pipeline_id' => self::PLANNING_PIPELINE_ID,
+                    'contact_id' => $ghlContactId
+                ]);
+
+                return $this->jsonResponse($response, [
+                    'success' => true,
+                    'message' => 'Ignored - opportunity not in PLANNING pipeline',
+                    'pipeline_id' => $pipelineId
+                ]);
+            }
 
             // Map GHL status to valid project status
             $rawStatus = $data['status'] ?? 'booked';
@@ -172,6 +192,14 @@ class WebhookController
                     'error' => 'Missing required field: id or contact_id'
                 ], 400);
             }
+
+            $this->logger->info('Processing project booking webhook', [
+                'contact_id' => $ghlContactId,
+                'opportunity_id' => $ghlOpportunityId,
+                'pipeline_id' => $pipelineId,
+                'stage_id' => $stageId,
+                'stage_name' => $stageName
+            ]);
 
             // Extract custom fields
             $customFields = $data['customField'] ?? [];
@@ -267,8 +295,15 @@ class WebhookController
                 // Update existing project
                 $updateData = [
                     'status' => $status,
-                    'total_revenue' => floatval($totalRevenue),
+                    'estimated_revenue' => floatval($totalRevenue), // This is estimated, not actual
                     'venue_address' => $venueAddress,
+                    'ghl_pipeline_id' => $pipelineId,
+                    'ghl_stage_id' => $stageId,
+                    'ghl_stage_name' => $stageName,
+                    'has_photography' => floatval($photoHours) > 0,
+                    'has_videography' => floatval($videoHours) > 0,
+                    'photo_hours' => floatval($photoHours),
+                    'video_hours' => floatval($videoHours),
                     'metadata' => json_encode($metadata),
                     'notes' => $notes,
                     'updated_at' => date('Y-m-d H:i:s')
@@ -276,6 +311,9 @@ class WebhookController
 
                 if ($eventDate) {
                     $updateData['event_date'] = $eventDate;
+                }
+                if ($ghlOpportunityId) {
+                    $updateData['ghl_opportunity_id'] = $ghlOpportunityId;
                 }
 
                 $this->db->update('projects', $updateData, ['id' => $existingProject['id']]);
@@ -294,7 +332,16 @@ class WebhookController
                     'event_type' => $eventType,
                     'venue_address' => $venueAddress,
                     'status' => $status,
-                    'total_revenue' => floatval($totalRevenue),
+                    'estimated_revenue' => floatval($totalRevenue), // Estimated, not actual
+                    'actual_revenue' => 0, // Actual revenue comes from Stripe payments only
+                    'ghl_opportunity_id' => $ghlOpportunityId,
+                    'ghl_pipeline_id' => $pipelineId,
+                    'ghl_stage_id' => $stageId,
+                    'ghl_stage_name' => $stageName,
+                    'has_photography' => floatval($photoHours) > 0,
+                    'has_videography' => floatval($videoHours) > 0,
+                    'photo_hours' => floatval($photoHours),
+                    'video_hours' => floatval($videoHours),
                     'metadata' => json_encode($metadata),
                     'notes' => $notes,
                     'created_at' => date('Y-m-d H:i:s')
@@ -304,7 +351,9 @@ class WebhookController
                 $this->logger->info('Created new project', [
                     'project_id' => $projectId,
                     'client_id' => $clientId,
-                    'project_name' => $projectName
+                    'project_name' => $projectName,
+                    'pipeline_id' => $pipelineId,
+                    'opportunity_id' => $ghlOpportunityId
                 ]);
             }
 
@@ -660,9 +709,10 @@ class WebhookController
             }
 
             // Check if inquiry already exists for this client
+            $inquiryDate = isset($data['dateAdded']) ? date('Y-m-d', strtotime($data['dateAdded'])) : date('Y-m-d');
             $existingInquiry = $this->db->queryOne(
                 "SELECT id FROM inquiries WHERE client_id = ? AND inquiry_date = ?",
-                [$clientId, $data['dateAdded'] ? date('Y-m-d', strtotime($data['dateAdded'])) : date('Y-m-d')]
+                [$clientId, $inquiryDate]
             );
 
             if ($existingInquiry) {
@@ -890,6 +940,543 @@ class WebhookController
             $this->logger->warning('Error refreshing views', [
                 'error' => $e->getMessage()
             ]);
+        }
+    }
+
+    /**
+     * Receive Stripe payment webhook
+     * POST /api/webhooks/stripe/payment
+     *
+     * Handles Stripe payment_intent.succeeded events
+     * Expected payload (Stripe webhook format):
+     * - id: Event ID
+     * - type: "payment_intent.succeeded"
+     * - data.object.id: Payment Intent ID
+     * - data.object.amount: Amount in cents
+     * - data.object.currency: Currency code
+     * - data.object.customer: Stripe customer ID
+     * - data.object.metadata: Custom metadata (should include ghl_contact_id, project_id)
+     */
+    public function receiveStripePayment(Request $request, Response $response): Response
+    {
+        $data = $this->parsePayload($request);
+        if (!$data) {
+            return $this->jsonResponse($response, [
+                'success' => false,
+                'error' => 'Invalid payload'
+            ], 400);
+        }
+
+        try {
+            $this->logger->info('Processing Stripe payment webhook', [
+                'event_type' => $data['type'] ?? 'unknown',
+                'event_id' => $data['id'] ?? null
+            ]);
+
+            // Extract payment data from Stripe event
+            $eventType = $data['type'] ?? '';
+            $paymentObject = $data['data']['object'] ?? $data;
+
+            if ($eventType !== 'payment_intent.succeeded' && $eventType !== '') {
+                // Not a payment success event, acknowledge but skip
+                return $this->jsonResponse($response, [
+                    'success' => true,
+                    'message' => 'Event type not handled: ' . $eventType
+                ]);
+            }
+
+            $stripePaymentId = $paymentObject['id'] ?? null;
+            $stripeCustomerId = $paymentObject['customer'] ?? null;
+            $amountCents = $paymentObject['amount'] ?? 0;
+            $amount = $amountCents / 100; // Convert cents to dollars
+            $currency = strtoupper($paymentObject['currency'] ?? 'USD');
+            $metadata = $paymentObject['metadata'] ?? [];
+
+            // Get GHL contact ID from metadata or try to find by Stripe customer
+            $ghlContactId = $metadata['ghl_contact_id'] ?? $metadata['contact_id'] ?? null;
+            $projectId = $metadata['project_id'] ?? null;
+
+            if (!$stripePaymentId || $amount <= 0) {
+                return $this->jsonResponse($response, [
+                    'success' => false,
+                    'error' => 'Missing required fields: payment ID and amount'
+                ], 400);
+            }
+
+            // Check if this payment was already recorded
+            $existingPayment = $this->db->queryOne(
+                "SELECT id FROM revenue WHERE stripe_payment_id = ?",
+                [$stripePaymentId]
+            );
+
+            if ($existingPayment) {
+                $this->logger->info('Stripe payment already recorded', [
+                    'revenue_id' => $existingPayment['id'],
+                    'stripe_payment_id' => $stripePaymentId
+                ]);
+
+                return $this->jsonResponse($response, [
+                    'success' => true,
+                    'data' => [
+                        'revenue_id' => $existingPayment['id'],
+                        'already_recorded' => true
+                    ]
+                ]);
+            }
+
+            // Find client by GHL contact ID or Stripe customer ID
+            $client = null;
+            if ($ghlContactId) {
+                $client = $this->db->queryOne(
+                    "SELECT id FROM clients WHERE ghl_contact_id = ?",
+                    [$ghlContactId]
+                );
+            }
+            if (!$client && $stripeCustomerId) {
+                $client = $this->db->queryOne(
+                    "SELECT id FROM clients WHERE stripe_customer_id = ?",
+                    [$stripeCustomerId]
+                );
+            }
+
+            if (!$client) {
+                $this->logger->warning('Client not found for Stripe payment', [
+                    'ghl_contact_id' => $ghlContactId,
+                    'stripe_customer_id' => $stripeCustomerId,
+                    'stripe_payment_id' => $stripePaymentId
+                ]);
+
+                // Create a placeholder client if we have customer info
+                if ($stripeCustomerId || $ghlContactId) {
+                    $clientData = [
+                        'ghl_contact_id' => $ghlContactId ?? 'stripe_' . $stripeCustomerId,
+                        'stripe_customer_id' => $stripeCustomerId,
+                        'first_name' => $metadata['customer_name'] ?? 'Stripe Customer',
+                        'email' => $metadata['customer_email'] ?? null,
+                        'status' => 'active',
+                        'lifecycle_stage' => 'customer',
+                        'created_at' => date('Y-m-d H:i:s')
+                    ];
+                    $clientId = $this->db->insert('clients', $clientData);
+                    $this->logger->info('Created client from Stripe payment', ['client_id' => $clientId]);
+                } else {
+                    return $this->jsonResponse($response, [
+                        'success' => false,
+                        'error' => 'Cannot identify client for payment'
+                    ], 400);
+                }
+            } else {
+                $clientId = $client['id'];
+
+                // Update client with Stripe customer ID if not set
+                if ($stripeCustomerId) {
+                    $this->db->execute(
+                        "UPDATE clients SET stripe_customer_id = ?, lifecycle_stage = 'customer', updated_at = NOW() WHERE id = ? AND stripe_customer_id IS NULL",
+                        [$stripeCustomerId, $clientId]
+                    );
+                }
+            }
+
+            // Find project or use provided project_id
+            $project = null;
+            if ($projectId) {
+                $project = $this->db->queryOne("SELECT id, actual_revenue FROM projects WHERE id = ?", [$projectId]);
+            }
+            if (!$project) {
+                $project = $this->db->queryOne(
+                    "SELECT id, actual_revenue FROM projects WHERE client_id = ? ORDER BY created_at DESC LIMIT 1",
+                    [$clientId]
+                );
+            }
+
+            if ($project) {
+                $projectId = $project['id'];
+
+                // Update project actual_revenue
+                $newActualRevenue = floatval($project['actual_revenue'] ?? 0) + $amount;
+                $this->db->update('projects', [
+                    'actual_revenue' => $newActualRevenue,
+                    'updated_at' => date('Y-m-d H:i:s')
+                ], ['id' => $projectId]);
+            }
+
+            // Insert revenue record
+            $revenueData = [
+                'project_id' => $projectId,
+                'client_id' => $clientId,
+                'payment_date' => date('Y-m-d'),
+                'amount' => $amount,
+                'payment_method' => 'credit_card',
+                'payment_type' => 'deposit', // Will be determined by n8n workflow
+                'status' => 'completed',
+                'stripe_payment_id' => $stripePaymentId,
+                'stripe_customer_id' => $stripeCustomerId,
+                'metadata' => json_encode([
+                    'currency' => $currency,
+                    'stripe_event_id' => $data['id'] ?? null,
+                    'metadata' => $metadata
+                ]),
+                'created_at' => date('Y-m-d H:i:s')
+            ];
+
+            $revenueId = $this->db->insert('revenue', $revenueData);
+
+            $this->logger->info('Recorded Stripe payment', [
+                'revenue_id' => $revenueId,
+                'project_id' => $projectId,
+                'client_id' => $clientId,
+                'amount' => $amount,
+                'stripe_payment_id' => $stripePaymentId
+            ]);
+
+            $this->refreshViews();
+
+            return $this->jsonResponse($response, [
+                'success' => true,
+                'data' => [
+                    'revenue_id' => $revenueId,
+                    'project_id' => $projectId,
+                    'client_id' => $clientId,
+                    'amount' => $amount
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            $this->logger->error('Error processing Stripe payment webhook', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return $this->jsonResponse($response, [
+                'success' => false,
+                'error' => 'Server error processing webhook'
+            ], 500);
+        }
+    }
+
+    /**
+     * Receive Stripe refund webhook
+     * POST /api/webhooks/stripe/refund
+     *
+     * Handles charge.refunded events
+     */
+    public function receiveStripeRefund(Request $request, Response $response): Response
+    {
+        $data = $this->parsePayload($request);
+        if (!$data) {
+            return $this->jsonResponse($response, [
+                'success' => false,
+                'error' => 'Invalid payload'
+            ], 400);
+        }
+
+        try {
+            $this->logger->info('Processing Stripe refund webhook', [
+                'event_type' => $data['type'] ?? 'unknown'
+            ]);
+
+            $refundObject = $data['data']['object'] ?? $data;
+
+            $stripeRefundId = $refundObject['id'] ?? null;
+            $stripeChargeId = $refundObject['charge'] ?? null;
+            $stripePaymentId = $refundObject['payment_intent'] ?? null;
+            $amountCents = $refundObject['amount'] ?? 0;
+            $refundAmount = $amountCents / 100;
+            $reason = $refundObject['reason'] ?? 'requested_by_customer';
+
+            if (!$stripeRefundId || $refundAmount <= 0) {
+                return $this->jsonResponse($response, [
+                    'success' => false,
+                    'error' => 'Missing required fields'
+                ], 400);
+            }
+
+            // Check if this refund was already recorded
+            $existingRefund = $this->db->queryOne(
+                "SELECT id FROM revenue WHERE stripe_refund_id = ?",
+                [$stripeRefundId]
+            );
+
+            if ($existingRefund) {
+                return $this->jsonResponse($response, [
+                    'success' => true,
+                    'data' => ['revenue_id' => $existingRefund['id'], 'already_recorded' => true]
+                ]);
+            }
+
+            // Find original payment
+            $originalPayment = null;
+            if ($stripePaymentId) {
+                $originalPayment = $this->db->queryOne(
+                    "SELECT id, project_id, client_id, amount FROM revenue WHERE stripe_payment_id = ?",
+                    [$stripePaymentId]
+                );
+            }
+
+            if (!$originalPayment) {
+                $this->logger->warning('Original payment not found for refund', [
+                    'stripe_refund_id' => $stripeRefundId,
+                    'stripe_payment_id' => $stripePaymentId
+                ]);
+
+                return $this->jsonResponse($response, [
+                    'success' => false,
+                    'error' => 'Original payment not found'
+                ], 404);
+            }
+
+            // Insert refund as negative revenue
+            $refundData = [
+                'project_id' => $originalPayment['project_id'],
+                'client_id' => $originalPayment['client_id'],
+                'payment_date' => date('Y-m-d'),
+                'amount' => -$refundAmount, // Negative amount for refund
+                'payment_method' => 'credit_card',
+                'payment_type' => 'refund',
+                'status' => 'refunded',
+                'stripe_refund_id' => $stripeRefundId,
+                'stripe_payment_id' => $stripePaymentId,
+                'refund_amount' => $refundAmount,
+                'refund_date' => date('Y-m-d'),
+                'refund_reason' => $reason,
+                'metadata' => json_encode([
+                    'original_revenue_id' => $originalPayment['id'],
+                    'stripe_charge_id' => $stripeChargeId,
+                    'stripe_event_id' => $data['id'] ?? null
+                ]),
+                'created_at' => date('Y-m-d H:i:s')
+            ];
+
+            $refundId = $this->db->insert('revenue', $refundData);
+
+            // Update project actual_revenue
+            if ($originalPayment['project_id']) {
+                $project = $this->db->queryOne(
+                    "SELECT actual_revenue FROM projects WHERE id = ?",
+                    [$originalPayment['project_id']]
+                );
+                if ($project) {
+                    $newActualRevenue = floatval($project['actual_revenue']) - $refundAmount;
+                    $this->db->update('projects', [
+                        'actual_revenue' => $newActualRevenue,
+                        'updated_at' => date('Y-m-d H:i:s')
+                    ], ['id' => $originalPayment['project_id']]);
+                }
+            }
+
+            $this->logger->info('Recorded Stripe refund', [
+                'refund_id' => $refundId,
+                'amount' => $refundAmount,
+                'original_payment_id' => $originalPayment['id']
+            ]);
+
+            $this->refreshViews();
+
+            return $this->jsonResponse($response, [
+                'success' => true,
+                'data' => [
+                    'refund_id' => $refundId,
+                    'amount' => $refundAmount,
+                    'original_payment_id' => $originalPayment['id']
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            $this->logger->error('Error processing Stripe refund webhook', [
+                'error' => $e->getMessage()
+            ]);
+
+            return $this->jsonResponse($response, [
+                'success' => false,
+                'error' => 'Server error'
+            ], 500);
+        }
+    }
+
+    /**
+     * Receive delivery status update
+     * POST /api/webhooks/deliveries
+     */
+    public function receiveDeliveryUpdate(Request $request, Response $response): Response
+    {
+        $data = $this->parsePayload($request);
+        if (!$data) {
+            return $this->jsonResponse($response, ['success' => false, 'error' => 'Invalid payload'], 400);
+        }
+
+        try {
+            $ghlContactId = $data['contact_id'] ?? $data['id'] ?? null;
+            $ghlOpportunityId = $data['opportunity_id'] ?? null;
+
+            // Find project
+            $project = null;
+            if ($ghlOpportunityId) {
+                $project = $this->db->queryOne(
+                    "SELECT id FROM projects WHERE ghl_opportunity_id = ?",
+                    [$ghlOpportunityId]
+                );
+            }
+            if (!$project && $ghlContactId) {
+                $client = $this->db->queryOne(
+                    "SELECT id FROM clients WHERE ghl_contact_id = ?",
+                    [$ghlContactId]
+                );
+                if ($client) {
+                    $project = $this->db->queryOne(
+                        "SELECT id FROM projects WHERE client_id = ? ORDER BY created_at DESC LIMIT 1",
+                        [$client['id']]
+                    );
+                }
+            }
+
+            if (!$project) {
+                return $this->jsonResponse($response, ['success' => false, 'error' => 'Project not found'], 404);
+            }
+
+            $projectId = $project['id'];
+
+            // Check if delivery record exists
+            $delivery = $this->db->queryOne(
+                "SELECT id FROM project_deliveries WHERE project_id = ?",
+                [$projectId]
+            );
+
+            // Map GHL custom fields to delivery fields
+            $customFields = $data['customField'] ?? [];
+            $deliveryData = [
+                'raw_photos_url' => $customFields['bp5oCoPifWXOOcN7Z79F'] ?? $data['raw_photos_url'] ?? null,
+                'raw_video_url' => $customFields['K3fNomA8tFU3wShooTTh'] ?? $data['raw_video_url'] ?? null,
+                'final_photos_url' => $customFields['epv4xKKDDS1HqbiRz7Wc'] ?? $data['final_photos_url'] ?? null,
+                'final_video_url' => $customFields['QjjCsBRRNu0FlD0ocEJk'] ?? $data['final_video_url'] ?? null,
+                'delivery_status' => $data['delivery_status'] ?? 'pending',
+                'photographer_notes' => $customFields['Moa0uJbJTUs3gi4d8zw1'] ?? $data['photographer_notes'] ?? null,
+                'updated_at' => date('Y-m-d H:i:s')
+            ];
+
+            // Set delivery dates if URLs provided
+            if (!empty($deliveryData['raw_photos_url'])) {
+                $deliveryData['raw_photos_delivered_date'] = $data['raw_photos_date'] ?? date('Y-m-d');
+            }
+            if (!empty($deliveryData['final_photos_url'])) {
+                $deliveryData['final_photos_delivered_date'] = $data['final_photos_date'] ?? date('Y-m-d');
+            }
+            if (!empty($deliveryData['raw_video_url'])) {
+                $deliveryData['raw_video_delivered_date'] = $data['raw_video_date'] ?? date('Y-m-d');
+            }
+            if (!empty($deliveryData['final_video_url'])) {
+                $deliveryData['final_video_delivered_date'] = $data['final_video_date'] ?? date('Y-m-d');
+            }
+
+            if ($delivery) {
+                $this->db->update('project_deliveries', $deliveryData, ['id' => $delivery['id']]);
+                $deliveryId = $delivery['id'];
+            } else {
+                $deliveryData['project_id'] = $projectId;
+                $deliveryData['created_at'] = date('Y-m-d H:i:s');
+                $deliveryId = $this->db->insert('project_deliveries', $deliveryData);
+            }
+
+            $this->logger->info('Updated delivery status', [
+                'delivery_id' => $deliveryId,
+                'project_id' => $projectId,
+                'status' => $deliveryData['delivery_status']
+            ]);
+
+            $this->refreshViews();
+
+            return $this->jsonResponse($response, [
+                'success' => true,
+                'data' => ['delivery_id' => $deliveryId, 'project_id' => $projectId]
+            ]);
+
+        } catch (\Exception $e) {
+            $this->logger->error('Error processing delivery webhook', ['error' => $e->getMessage()]);
+            return $this->jsonResponse($response, ['success' => false, 'error' => 'Server error'], 500);
+        }
+    }
+
+    /**
+     * Receive client review
+     * POST /api/webhooks/reviews
+     */
+    public function receiveReview(Request $request, Response $response): Response
+    {
+        $data = $this->parsePayload($request);
+        if (!$data) {
+            return $this->jsonResponse($response, ['success' => false, 'error' => 'Invalid payload'], 400);
+        }
+
+        try {
+            $ghlContactId = $data['contact_id'] ?? $data['id'] ?? null;
+
+            if (!$ghlContactId) {
+                return $this->jsonResponse($response, ['success' => false, 'error' => 'Missing contact_id'], 400);
+            }
+
+            // Find client
+            $client = $this->db->queryOne(
+                "SELECT id FROM clients WHERE ghl_contact_id = ?",
+                [$ghlContactId]
+            );
+
+            if (!$client) {
+                return $this->jsonResponse($response, ['success' => false, 'error' => 'Client not found'], 404);
+            }
+
+            $clientId = $client['id'];
+
+            // Find most recent project
+            $project = $this->db->queryOne(
+                "SELECT id FROM projects WHERE client_id = ? ORDER BY event_date DESC LIMIT 1",
+                [$clientId]
+            );
+
+            // Map star ratings (convert "X stars" to integer)
+            $parseRating = function($rating) {
+                if (is_numeric($rating)) return intval($rating);
+                if (preg_match('/(\d+)\s*star/i', $rating, $matches)) {
+                    return intval($matches[1]);
+                }
+                return null;
+            };
+
+            $reviewData = [
+                'client_id' => $clientId,
+                'project_id' => $project ? $project['id'] : null,
+                'overall_rating' => $parseRating($data['overall_rating'] ?? null),
+                'photographer_rating' => $parseRating($data['photographer_rating'] ?? null),
+                'videographer_rating' => $parseRating($data['videographer_rating'] ?? null),
+                'nps_score' => isset($data['nps_score']) ? intval($data['nps_score']) : null,
+                'would_recommend' => isset($data['would_recommend']) ?
+                    (strtolower($data['would_recommend']) === 'yes' || $data['would_recommend'] === true) : null,
+                'review_text' => $data['review_text'] ?? null,
+                'review_platform' => $data['review_platform'] ?? 'direct',
+                'review_link' => $data['review_link'] ?? null,
+                'review_date' => $data['review_date'] ?? date('Y-m-d'),
+                'ghl_synced' => true,
+                'ghl_sync_date' => date('Y-m-d H:i:s'),
+                'created_at' => date('Y-m-d H:i:s')
+            ];
+
+            $reviewId = $this->db->insert('client_reviews', $reviewData);
+
+            $this->logger->info('Recorded client review', [
+                'review_id' => $reviewId,
+                'client_id' => $clientId,
+                'overall_rating' => $reviewData['overall_rating'],
+                'nps_score' => $reviewData['nps_score']
+            ]);
+
+            $this->refreshViews();
+
+            return $this->jsonResponse($response, [
+                'success' => true,
+                'data' => ['review_id' => $reviewId, 'client_id' => $clientId]
+            ]);
+
+        } catch (\Exception $e) {
+            $this->logger->error('Error processing review webhook', ['error' => $e->getMessage()]);
+            return $this->jsonResponse($response, ['success' => false, 'error' => 'Server error'], 500);
         }
     }
 
