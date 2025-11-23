@@ -734,7 +734,7 @@ class WebhookController
             // Insert inquiry
             $inquiryData = [
                 'client_id' => $clientId,
-                'inquiry_date' => $data['dateAdded'] ? date('Y-m-d', strtotime($data['dateAdded'])) : date('Y-m-d'),
+                'inquiry_date' => $inquiryDate, // Use the variable we already set above
                 'source' => $source,
                 'event_type' => $eventType,
                 'event_date' => $eventDate,
