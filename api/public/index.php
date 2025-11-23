@@ -34,6 +34,19 @@ $app->addBodyParsingMiddleware();
 
 // Database
 $container->set('db', function() {
+    // Try to parse DATABASE_URL first (Railway auto-generates this correctly)
+    if (!empty($_ENV['DATABASE_URL'])) {
+        $url = parse_url($_ENV['DATABASE_URL']);
+        return new \CandidAnalytics\Services\Database(
+            $url['host'],
+            (string)($url['port'] ?? '5432'),
+            ltrim($url['path'] ?? '/railway', '/'),
+            $url['user'] ?? 'postgres',
+            $url['pass'] ?? ''
+        );
+    }
+
+    // Fallback to individual variables
     return new \CandidAnalytics\Services\Database(
         $_ENV['DB_HOST'],
         $_ENV['DB_PORT'],
